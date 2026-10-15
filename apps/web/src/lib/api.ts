@@ -71,6 +71,7 @@ export const api = {
   countries: (withStreams = true) => get<Country[]>("/api/countries", { withStreams }),
   languages: (withStreams = true) => get<Language[]>("/api/languages", { withStreams }),
   channels: (q: ChannelQuery, signal?: AbortSignal) => get<Paged<ChannelSummary>>("/api/channels", q as Record<string, unknown>, signal),
+  channelByNumber: (n: number, signal?: AbortSignal) => get<ChannelDetail>(`/api/channels/number/${n}`, undefined, signal),
   channel: (id: string, signal?: AbortSignal) => get<ChannelDetail>(`/api/channels/${encodeURIComponent(id)}`, undefined, signal),
   channelEpg: (id: string, from?: number, to?: number, signal?: AbortSignal) =>
     get<{ channel: string; items: Programme[] }>(`/api/channels/${encodeURIComponent(id)}/epg`, { from, to }, signal),

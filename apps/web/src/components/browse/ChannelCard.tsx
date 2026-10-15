@@ -13,8 +13,9 @@ export interface ChannelCardProps {
   now: number;
 }
 
+// One surface for both views. Hover lifts the border; keyboard focus rings the whole card.
 const cardBase =
-  "group relative flex rounded-xl border border-zinc-200/90 bg-white transition-colors hover:border-zinc-300 hover:shadow-sm focus-within:ring-2 focus-within:ring-zinc-400 dark:border-zinc-800 dark:bg-zinc-900/50 dark:hover:border-zinc-700 dark:focus-within:ring-zinc-500";
+  "group relative flex rounded-xl border border-zinc-200/90 bg-white transition-colors hover:border-zinc-300 hover:bg-zinc-50 hover:shadow-sm focus-within:ring-2 focus-within:ring-zinc-400 dark:border-zinc-800 dark:bg-zinc-900/50 dark:hover:border-zinc-700 dark:hover:bg-zinc-900 dark:focus-within:ring-zinc-500";
 
 function HeartIcon({ filled, className }: { filled: boolean; className?: string }) {
   return (
@@ -38,17 +39,29 @@ function Badge({ children, tone = "neutral" }: { children: ReactNode; tone?: "ne
   return <span className={`rounded border px-1.5 py-px text-xs font-semibold uppercase tracking-wide ${cls}`}>{children}</span>;
 }
 
+/** Health dot from the last probe: green passed, red failed, nothing when never checked. */
+export function OnlineDot({ online }: { online: boolean | null }) {
+  if (online === null) return null;
+  const label = online ? "Last check passed: online" : "Last check failed: offline";
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${online ? "bg-emerald-500" : "bg-red-500"}`}
+    />
+  );
+}
+
 function NowLine({ channel, now }: { channel: ChannelSummary; now: number }) {
-  const prog = channel.now ? progress(channel.now.start, channel.now.stop, now) : 0;
   if (!channel.now) return null;
+  const prog = progress(channel.now.start, channel.now.stop, now);
   return (
     <div className="min-w-0">
       <p className="truncate text-xs text-zinc-600 dark:text-zinc-400">
         <span className="text-zinc-400 dark:text-zinc-500">Now: </span>
         {channel.now.title}
-        <span className="ml-1.5 tabular-nums text-zinc-400 dark:text-zinc-500">
-          {fmtTime(channel.now.start)}
-        </span>
+        <span className="ml-1.5 tabular-nums text-zinc-400 dark:text-zinc-500">{fmtTime(channel.now.start)}</span>
       </p>
       <div className="mt-1 h-1 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
         <div className="h-full rounded-full bg-zinc-900 transition-[width] duration-500 dark:bg-zinc-100" style={{ width: `${prog * 100}%` }} />
@@ -62,7 +75,7 @@ function Meta({ channel }: { channel: ChannelSummary }) {
   const streams = `${c.streamCount} stream${c.streamCount === 1 ? "" : "s"}`;
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
-      <span className="truncate">
+      <span className="min-w-0 truncate">
         {c.flag && <span className="mr-1" aria-hidden="true">{c.flag}</span>}
         {c.countryName ?? c.country ?? "Unknown country"}
       </span>
@@ -70,14 +83,7 @@ function Meta({ channel }: { channel: ChannelSummary }) {
       <span className="whitespace-nowrap">{streams}</span>
       {c.bestQuality && <Badge>{c.bestQuality}</Badge>}
       {c.isNsfw && <Badge tone="warn">18+</Badge>}
-      {c.online !== null && (
-        <span
-          className={`inline-block h-1.5 w-1.5 rounded-full ${c.online ? "bg-emerald-500" : "bg-zinc-400 dark:bg-zinc-600"}`}
-          title={c.online ? "Last check: online" : "Last check: offline"}
-          aria-label={c.online ? "Last check: online" : "Last check: offline"}
-          role="img"
-        />
-      )}
+      <OnlineDot online={c.online} />
     </div>
   );
 }
@@ -98,6 +104,7 @@ function Tags({ categories }: { categories: string[] }) {
 export const ChannelCard = memo(function ChannelCard({ channel: c, isFavorite, view, now }: ChannelCardProps) {
   const href = `/watch/${encodeURIComponent(c.id)}`;
   const favLabel = `${isFavorite ? "Remove" : "Add"} ${c.name} ${isFavorite ? "from" : "to"} favorites`;
+  const hasNumber = c.number !== null;
 
   const favButton = (
     <button
@@ -116,25 +123,40 @@ export const ChannelCard = memo(function ChannelCard({ channel: c, isFavorite, v
     </button>
   );
 
-  // The title link stretches over the whole card (after:inset-0) so the card is clickable,
-  // while the heart button sits above it with its own z-index.
+  // The title link stretches over the whole card (after:inset-0) so the card is clickable, while the
+  // heart button sits above it with its own z-index. The channel number is outside the link on purpose.
   const titleLink = (
-    <Link to={href} className="block truncate text-sm font-semibold text-zinc-900 after:absolute after:inset-0 after:rounded-xl focus:outline-none dark:text-zinc-100">
+    <Link
+      to={href}
+      title={c.name}
+      className="block min-w-0 truncate text-sm font-semibold text-zinc-900 after:absolute after:inset-0 after:rounded-xl focus:outline-none dark:text-zinc-100"
+    >
       {c.name}
     </Link>
   );
 
   if (view === "list") {
     return (
-      <article className={`${cardBase} items-center gap-4 p-3`}>
-        <div className="flex h-14 w-24 shrink-0 items-center justify-center rounded-lg bg-zinc-100 p-2 dark:bg-zinc-800/60">
+      <article className={`${cardBase} items-center gap-3 p-2.5 sm:gap-4 sm:p-3`}>
+        <div className="flex h-12 w-16 shrink-0 items-center justify-center rounded-lg bg-zinc-100 p-1.5 sm:h-14 sm:w-24 sm:p-2 dark:bg-zinc-800/60">
           <ChannelLogo src={c.logo} name={c.name} />
         </div>
-        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <div className="min-w-0">{titleLink}</div>
-          <Meta channel={c} />
-          <Tags categories={c.categories} />
-          <NowLine channel={c} now={now} />
+        {/* One row on desktop: number and name, country and streams, then the programme. Wraps on phones. */}
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1.5">
+          <div className="flex min-w-0 max-w-full items-baseline gap-1.5 sm:w-56 sm:shrink-0 lg:w-72">
+            {hasNumber && (
+              <span className="shrink-0 text-xs tabular-nums text-zinc-400 dark:text-zinc-500" title={`Channel ${c.number}`}>
+                {c.number} ·
+              </span>
+            )}
+            {titleLink}
+          </div>
+          <div className="min-w-0 sm:shrink-0">
+            <Meta channel={c} />
+          </div>
+          <div className="min-w-0 basis-full sm:flex-1 sm:basis-0">
+            <NowLine channel={c} now={now} />
+          </div>
         </div>
         {favButton}
       </article>
@@ -142,9 +164,17 @@ export const ChannelCard = memo(function ChannelCard({ channel: c, isFavorite, v
   }
 
   return (
-    <article className={`${cardBase} flex-col gap-3 p-3`}>
+    <article className={`${cardBase} h-full flex-col gap-3 p-3`}>
       <div className="relative flex aspect-[4/3] items-center justify-center rounded-lg bg-zinc-100 p-4 dark:bg-zinc-800/60">
         <ChannelLogo src={c.logo} name={c.name} />
+        {hasNumber && (
+          <span
+            title={`Channel ${c.number}`}
+            className="absolute left-2 top-2 rounded bg-white/90 px-1.5 py-px text-[11px] font-semibold tabular-nums text-zinc-600 shadow-sm dark:bg-zinc-900/90 dark:text-zinc-300"
+          >
+            {c.number}
+          </span>
+        )}
         <div className="absolute right-2 top-2">{favButton}</div>
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-2 px-0.5">

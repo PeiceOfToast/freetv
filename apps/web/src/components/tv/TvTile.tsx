@@ -1,6 +1,13 @@
 import { useState, type ReactNode } from "react";
 import type { ChannelSummary } from "@/lib/api";
 import { fmtTime, nowTs, progress } from "@/lib/format";
+import { tvSettings } from "./tvSettings";
+
+/** The channel's instance number, shown before the name. Renders nothing when null or turned off. */
+export function ChannelNo({ n, className = "tv-chno" }: { n: number | null | undefined; className?: string }) {
+  if (typeof n !== "number" || tvSettings.get().showNumbers === false) return null;
+  return <span className={className} aria-hidden="true">{n}</span>;
+}
 
 export function qualityBadge(q: string | null): { label: string; cls: string } | null {
   if (!q) return null;
@@ -23,17 +30,18 @@ export function ChannelTile({ ch, onOpen, nowLine = true }: { ch: ChannelSummary
   const badge = qualityBadge(ch.bestQuality);
   const now = ch.now?.title ?? "";
   const pct = ch.now ? Math.round(progress(ch.now.start, ch.now.stop, nowTs()) * 100) : null;
+  const label = typeof ch.number === "number" && tvSettings.get().showNumbers !== false ? `${ch.number} ` : "";
   return (
     <button
       type="button"
       data-nav
       tabIndex={0}
       className="tv-tile"
-      aria-label={`${ch.name}${now ? `, now ${now}` : ""}`}
+      aria-label={`${label}${ch.name}${now ? `, now ${now}` : ""}`}
       onClick={onOpen}
     >
       <div className="tv-tile-logo"><ChannelLogo src={ch.logo} name={ch.name} /></div>
-      <div className="tv-tile-name">{ch.name}</div>
+      <div className="tv-tile-name"><ChannelNo n={ch.number} />{ch.name}</div>
       <div className="tv-tile-meta">
         <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{ch.flag ? `${ch.flag} ` : ""}{ch.countryName ?? ""}</span>
         {badge && <span className={badge.cls}>{badge.label}</span>}

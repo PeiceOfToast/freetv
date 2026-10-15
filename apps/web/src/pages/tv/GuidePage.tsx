@@ -3,9 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { api, type ChannelSummary, type Programme } from "@/lib/api";
 import { favorites } from "@/lib/favorites";
 import { fmtTime, nowTs } from "@/lib/format";
-import { focusFirst, pushBack, useSpatialNav } from "@/lib/spatial-nav";
-import { ChannelLogo } from "@/components/tv/TvTile";
+import { focusFirst, pushBack, tvKeys, useSpatialNav } from "@/lib/spatial-nav";
+import { ChannelLogo, ChannelNo } from "@/components/tv/TvTile";
 import { tvList } from "@/components/tv/tvSettings";
+import { remember } from "@/components/tv/numbers";
+
+const DIGIT_MS = 1500;
 
 const WINDOW = 2 * 3600; // 2 h visible
 const STEP = 30 * 60;    // pan and header granularity
@@ -33,6 +36,11 @@ export default function GuidePage() {
   const [chans, setChans] = useState<Record<string, ChannelSummary>>({});
   const [grid, setGrid] = useState<Record<string, Programme[]>>({});
   const [error, setError] = useState(false);
+  const [digits, setDigits] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+  const digitsRef = useRef("");
+  const digitTimer = useRef<number | undefined>(undefined);
+  const msgTimer = useRef<number | undefined>(undefined);
 
   // Resolve the channel list once.
   useEffect(() => {
@@ -46,7 +54,7 @@ export default function GuidePage() {
     if (!ids || ids.length === 0) return;
     const ac = new AbortController();
     api.channels({ favorites: ids, limit: MAX_ROWS }, ac.signal)
-      .then((r) => setChans(Object.fromEntries(r.items.map((c) => [c.id, c]))))
+      .then((r) => { remember(r.items); setChans(Object.fromEntries(r.items.map((c) => [c.id, c]))); })
       .catch(() => undefined);
     return () => ac.abort();
   }, [ids]);
@@ -96,6 +104,43 @@ export default function GuidePage() {
     if (!a || a === document.body || !root.contains(a)) focusFirst(root);
   }, [grid]);
 
+  // Digits jump to the row of that channel number, when it is in the grid.
+  const channelByNumber = (n: number) => (ids ?? []).find((x) => chans[x]?.number === n) ?? null;
+
+  const flash = (text: string) => {
+    setMsg(text);
+    window.clearTimeout(msgTimer.current);
+    msgTimer.current = window.setTimeout(() => setMsg(null), 2500);
+  };
+
+  const jumpToNumber = () => {
+    const n = parseInt(digitsRef.current, 10);
+    digitsRef.current = "";
+    setDigits("");
+    if (!n) return;
+    const cid = channelByNumber(n);
+    if (!cid) { flash(`Channel ${n} isn't in this guide`); return; }
+    const row = Array.from(rootRef.current?.querySelectorAll<HTMLElement>("[data-row]") ?? [])
+      .find((el) => el.getAttribute("data-row") === cid);
+    if (row) focusFirst(row);
+  };
+  const jumpRef = useRef(jumpToNumber);
+  jumpRef.current = jumpToNumber;
+
+  useEffect(() => tvKeys.subscribe((k) => {
+    if (k.type !== "digit") return;
+    const next = (digitsRef.current + String(k.digit)).slice(-4);
+    digitsRef.current = next;
+    setDigits(next);
+    window.clearTimeout(digitTimer.current);
+    digitTimer.current = window.setTimeout(() => jumpRef.current(), DIGIT_MS);
+  }), []);
+
+  useEffect(() => () => {
+    window.clearTimeout(digitTimer.current);
+    window.clearTimeout(msgTimer.current);
+  }, []);
+
   const watch = (cid: string) => {
     const all = ids ?? [];
     tvList.set({ label: "Guide", ids: all, index: Math.max(0, all.indexOf(cid)), returnTo: "/tv/guide" });
@@ -103,6 +148,9 @@ export default function GuidePage() {
   };
 
   const headerTimes = useMemo(() => [0, 1, 2, 3].map((k) => ({ k, t: from + k * STEP })), [from]);
+  const typed = digits ? parseInt(digits, 10) : 0;
+  const typedCid = typed ? channelByNumber(typed) : null;
+  const typedName = typedCid ? chans[typedCid]?.name ?? "" : typed ? "Not in this guide" : "";
   const nowX = nowTs() - from;
   const showNow = nowX >= 0 && nowX <= WINDOW;
 
@@ -115,6 +163,13 @@ export default function GuidePage() {
 
       {ids && ids.length === 0 && <div className="tv-small">No channels to show. Add favorites or open a list first.</div>}
       {error && <div className="tv-small">Couldn't load the guide. Press Back and try again.</div>}
+      {digits && (
+        <div className="tv-number" aria-live="polite">
+          {digits}
+          {typedName && <div className="tv-number-name">{typedName}</div>}
+        </div>
+      )}
+      {msg && <div className="tv-msg" style={{ top: "auto", bottom: "10vh", transform: "translateX(-50%)" }}>{msg}</div>}
 
       <div className="tv-guide" style={{ maxHeight: "66vh", overflowY: "auto", overflowX: "hidden", paddingRight: 8 }}>
         <div className="tv-guide-row" style={{ gridTemplateColumns: "260px 1fr" }}>
@@ -133,9 +188,10 @@ export default function GuidePage() {
           const progs = grid[cid] ?? [];
           const ch = chans[cid];
           return (
-            <div key={cid} className="tv-guide-row" style={{ gridTemplateColumns: "260px 1fr", height: 84 }}>
+            <div key={cid} data-row={cid} className="tv-guide-row" style={{ gridTemplateColumns: "260px 1fr", height: 84 }}>
               <div className="tv-guide-ch" style={{ height: 84 }}>
                 {ch ? <ChannelLogo src={ch.logo} name={ch.name} /> : null}
+                <ChannelNo n={ch?.number} />
                 <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{ch?.name ?? cid}</span>
               </div>
               <div style={{ position: "relative", height: 84 }}>

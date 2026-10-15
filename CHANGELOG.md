@@ -5,6 +5,15 @@ All notable changes to FreeTV. Format follows Keep a Changelog; versions follow 
 ## [Unreleased]
 
 ### Added
+- Stream health prober: background checks of every stream (rate-limited, hysteresis, DASH-aware), `online` filter/dots now populated, channel detail orders known-online streams first, `relayOnly` hint for streams needing UA/Referer; `POST /api/admin/probe`.
+- Stable per-instance channel numbers (`number` on channel responses, `tvg-chno` in M3U, `GET /api/channels/number/:n`); TV mode digit entry jumps by number, channel up/down steps by number outside a list.
+- Logo cache (`/logo/:id`, resized WebP/PNG, LRU on disk) so visitors never hit third-party image hosts.
+- Search: bm25 weighting, exact/prefix boosts, language/country/category understanding ("spanish news", "germany", "4k"), safe query parsing.
+- Relay: per-IP token-bucket rate limiting and concurrency cap, Prometheus `/metrics`, hashed client IPs in logs.
+- API `/metrics` and `GET /api/admin/status`; `/admin` operator page (token-gated) with re-ingest / re-import / probe buttons.
+- Site: correct "Playing · direct/relay" status, reduced-data mode, `?` keyboard cheat-sheet and global shortcuts, numbers and online dots in browse, health summary in the toolbar.
+- Playwright e2e suite (`e2e/`, 37 tests incl. real HLS playback through the relay) running in CI.
+- Infra: `monitoring` profile (Prometheus + Grafana dashboard), `autoupdate` profile (Watchtower) and a systemd timer alternative, Hetzner cloud-init, Fly and Helm skeletons, `block-channel.sh`.
 - `LOCAL_BLOCKLIST`: per-instance channel blocklist file merged at ingest.
 
 ## [0.1.0] — 2026-10-15

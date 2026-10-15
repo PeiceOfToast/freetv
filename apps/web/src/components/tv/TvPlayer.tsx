@@ -16,12 +16,23 @@ export interface TvPlayerState {
 
 interface Attempt { kind: "direct" | "relay"; url: string }
 
+// The API orders streams for playback: known-online, never-probed, known-offline; https before http;
+// then quality. We keep that order. The preferred quality only moves matching streams to the front
+// inside each health group, so an online SD stream still comes before an offline 4K one.
+function preferQuality(streams: StreamInfo[], quality: string): StreamInfo[] {
+  if (quality === "any") return streams;
+  const out: StreamInfo[] = [];
+  for (const rank of [0, 1, 2]) {
+    const group = streams.filter((s) => (s.online === true ? 0 : s.online === null ? 1 : 2) === rank);
+    out.push(...group.filter((s) => s.quality === quality), ...group.filter((s) => s.quality !== quality));
+  }
+  return out;
+}
+
 function planFor(streams: StreamInfo[], preferRelay: boolean, quality: string): Attempt[] {
-  // Preferred quality first (stable), otherwise the API's own order (https, then quality).
-  const ordered = quality === "any"
-    ? streams
-    : [...streams.filter((s) => s.quality === quality), ...streams.filter((s) => s.quality !== quality)];
-  const direct: Attempt[] = ordered.filter((s) => s.url).map((s) => ({ kind: "direct" as const, url: s.url }));
+  const ordered = preferQuality(streams, quality);
+  // relayOnly streams need a User-Agent/Referer the browser cannot send, so the direct attempt is skipped.
+  const direct: Attempt[] = ordered.filter((s) => s.url && !s.relayOnly).map((s) => ({ kind: "direct" as const, url: s.url }));
   const relay: Attempt[] = ordered.filter((s) => s.proxyUrl).map((s) => ({ kind: "relay" as const, url: s.proxyUrl as string }));
   return preferRelay ? [...relay, ...direct] : [...direct, ...relay];
 }
@@ -64,6 +75,7 @@ export function TvPlayer({
     let dead = false;
     let parsed = false;
     let timer: number | undefined;
+    setVia(null); // this attempt has not connected yet
 
     const teardown = () => {
       if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }

@@ -1,7 +1,10 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { useState } from "react";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useTheme } from "@/lib/theme";
 import { promptInstall, useCanInstall, useIosInstallHint } from "@/lib/pwa";
+import { useKeyHandler } from "@/lib/shortcuts";
 import { UpdateToast } from "./UpdateToast";
+import { ShortcutsDialog } from "./ShortcutsDialog";
 
 // Touch targets are 44 px tall on touch screens (min-h-11). pointer-fine (mouse) keeps the compact
 // desktop size. Narrow phones get tighter horizontal padding so the header fits in 320 px.
@@ -54,6 +57,14 @@ function IosInstallHint() {
 
 export function Layout() {
   const [theme, setTheme] = useTheme();
+  const navigate = useNavigate();
+  const [helpOpen, setHelpOpen] = useState(false);
+  // Global keys. Page-specific keys (search, player) live with their pages.
+  useKeyHandler({
+    "?": () => setHelpOpen(true),
+    g: () => navigate("/guide"),
+    t: () => navigate("/tv"),
+  }, !helpOpen);
   return (
     // dvh tracks the visible viewport on mobile browsers (the address bar grows and shrinks); vh does not.
     <div className="min-h-screen supports-[height:100dvh]:min-h-dvh flex flex-col pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
@@ -71,6 +82,15 @@ export function Layout() {
           </nav>
           <div className="ml-auto flex min-w-0 items-center gap-1 sm:gap-2">
             <InstallButton />
+            <button
+              type="button"
+              onClick={() => setHelpOpen(true)}
+              aria-label="Keyboard shortcuts"
+              title="Keyboard shortcuts (?)"
+              className="grid min-h-11 min-w-11 pointer-fine:min-h-0 pointer-fine:min-w-7 place-items-center rounded-md border border-zinc-300 text-sm font-semibold hover:bg-zinc-200/60 dark:border-zinc-700 dark:hover:bg-zinc-800/60"
+            >
+              ?
+            </button>
             <select aria-label="Theme" value={theme} onChange={(e) => setTheme(e.target.value as typeof theme)}
               className="min-h-11 pointer-fine:min-h-0 text-sm bg-transparent border border-zinc-300 dark:border-zinc-700 rounded-md px-1.5 py-1 max-w-24">
               <option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option>
@@ -86,6 +106,7 @@ export function Layout() {
       </footer>
       <IosInstallHint />
       <UpdateToast />
+      <ShortcutsDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );
 }

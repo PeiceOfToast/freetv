@@ -108,3 +108,12 @@ skeletons plus guides for Android TV/Fire TV (TWA), Samsung Tizen and LG webOS (
 `docs/MOBILE.md`). Main JS bundle dropped from 276 kB to 68 kB gzipped by lazy-loading the player, guide
 and TV routes. Verified headlessly at 320/390/844 px and 1920×1080 with keyboard-only navigation; not
 yet verified on a real phone, Chromecast or TV.
+
+## Round 3 — making more channels play, operations (2026-10-15)
+
+Shipped the "would do next" list: stream health prober (schema `stream_health`, hysteresis, DASH), health-aware
+stream ordering and relay-only hints, stable channel numbers (API, M3U, TV digit entry), logo cache, search
+understanding, relay rate limits + metrics, api metrics + `/admin`, Playwright e2e in CI (37 tests, two real bugs
+caught), monitoring/auto-update/deploy variants. Verified in the sandbox: api 190 tests, proxy 70, e2e 37; a
+real probe pass ran end-to-end (every host blocked here, so results are "pending"). Still needs real hardware:
+Chromecast/AirPlay/TV browsers, and a real probe cycle on an internet-connected VM.

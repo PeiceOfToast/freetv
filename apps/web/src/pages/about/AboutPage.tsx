@@ -33,12 +33,22 @@ export default function AboutPage() {
             ["With streams", meta.channelsWithStreams.toLocaleString()],
             ["Guide entries", meta.programmes.toLocaleString()],
             ["Relay", meta.proxyEnabled ? "on" : "off"],
+            ...(meta.health && meta.health.probed > 0
+              ? [
+                  ["Streams checked", meta.health.probed.toLocaleString()],
+                  ["Checked online", `${meta.health.online.toLocaleString()} (${Math.round((meta.health.online / meta.health.probed) * 100)}%)`],
+                ]
+              : []),
           ].map(([k, v]) => (
             <div key={k} className="rounded-xl border border-zinc-200 dark:border-zinc-800 p-4">
               <div className="text-xs uppercase tracking-wide opacity-60">{k}</div>
               <div className="text-xl font-semibold mt-1">{v}</div>
             </div>
           ))}
+          <p className="col-span-2 sm:col-span-4 text-sm text-zinc-600 dark:text-zinc-300 leading-relaxed">
+            Health checks fetch each stream's playlist in the background, so a channel marked online passed its last
+            check. Channel numbers are stable per instance, and the same numbers appear in the M3U playlist.
+          </p>
           <div className="col-span-2 sm:col-span-4 text-xs opacity-60">
             Catalog updated {when(meta.lastIngest)} · Guide updated {when(meta.lastEpgImport)} · v{meta.version}
           </div>
@@ -51,6 +61,14 @@ export default function AboutPage() {
           Everything here is open source under the MIT license. Clone the repository, run <code>docker compose up -d</code>,
           point a domain at it and you have your own copy, guide and all. The README covers hosting it for free on an
           Oracle Cloud VM.
+        </p>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-xl font-semibold">Operator</h2>
+        <p className="text-zinc-600 dark:text-zinc-300 leading-relaxed">
+          Running this instance yourself? The <a className="underline" href="/admin">Operator</a> page has the catalog,
+          guide, health and relay status.
         </p>
       </section>
 

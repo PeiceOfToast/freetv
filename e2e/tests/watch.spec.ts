@@ -32,12 +32,9 @@ test.describe("watch", () => {
     expect(urls.some((u) => u.includes("/proxy/"))).toBe(false);
   });
 
-  // Known bug in apps/web/src/components/player/Player.tsx: the status line only reads
-  // "Playing via relay" once every attempt is exhausted, so after a successful relay it keeps saying
-  // "Trying source N of M…". Enable this when the status logic is fixed.
-  test.fixme("the status line reports the relay once it is playing", async ({ page }) => {
+  test("the status line reports the relay once it is playing", async ({ page }) => {
     await page.goto(`/watch/${CHANNELS.cnn}`);
     await expectVideoPlaying(page);
-    await expect(page.getByText("Playing via relay")).toBeVisible();
+    await expect(page.getByText("Playing · relay")).toBeVisible();
   });
 });

@@ -122,12 +122,12 @@ html.tv-cursor-hidden, html.tv-cursor-hidden * { cursor: none !important; }
 .tv-info-body { flex: 1; min-width: 0; }
 .tv-bar { height: calc(8 * var(--u)); background: #3f3f46; border-radius: calc(4 * var(--u)); overflow: hidden; margin-top: calc(10 * var(--u)); }
 .tv-bar > div { height: 100%; background: #f4f4f5; }
-.tv-number { position: absolute; top: 6vh; right: 5vw; font-size: calc(96 * var(--u)); font-weight: 800; background: rgba(9, 9, 11, 0.85); padding: calc(6 * var(--u)) calc(28 * var(--u)); border-radius: calc(16 * var(--u)); }
+.tv-number { position: absolute; z-index: 20; top: 6vh; right: 5vw; font-size: calc(96 * var(--u)); font-weight: 800; background: rgba(9, 9, 11, 0.85); padding: calc(6 * var(--u)) calc(28 * var(--u)); border-radius: calc(16 * var(--u)); }
 .tv-strip { position: absolute; left: 5vw; right: 5vw; bottom: 6vh; background: rgba(9, 9, 11, 0.92); border-radius: calc(18 * var(--u)); padding: calc(18 * var(--u)) calc(20 * var(--u)); }
 .tv-strip .tv-row-track { padding: calc(10 * var(--u)) calc(16 * var(--u)) calc(6 * var(--u)) calc(16 * var(--u)); }
 .tv-strip .tv-tile { width: calc(240 * var(--u)); }
 .tv-desc { font-size: calc(22 * var(--u)); color: #d4d4d8; max-height: 3.6em; overflow: hidden; margin-top: calc(8 * var(--u)); }
-.tv-msg { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: calc(30 * var(--u)); background: rgba(9, 9, 11, 0.9); padding: calc(20 * var(--u)) calc(28 * var(--u)); border-radius: calc(16 * var(--u)); text-align: center; }
+.tv-msg { position: absolute; z-index: 20; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: calc(30 * var(--u)); background: rgba(9, 9, 11, 0.9); padding: calc(20 * var(--u)) calc(28 * var(--u)); border-radius: calc(16 * var(--u)); text-align: center; }
 
 /* Guide */
 .tv-guide { display: grid; gap: calc(6 * var(--u)); }
@@ -143,3 +143,8 @@ html.tv-cursor-hidden, html.tv-cursor-hidden * { cursor: none !important; }
 .tv-setting { display: flex; justify-content: space-between; align-items: center; gap: calc(24 * var(--u)); padding: calc(18 * var(--u)) calc(22 * var(--u)); background: #18181b; border-radius: calc(14 * var(--u)); margin-bottom: calc(14 * var(--u)); font-size: calc(24 * var(--u)); width: 100%; max-width: calc(900 * var(--u)); }
 .tv-toggle { font-size: calc(22 * var(--u)); padding: calc(6 * var(--u)) calc(18 * var(--u)); border-radius: calc(999 * var(--u)); background: #3f3f46; }
 .tv-toggle[aria-pressed="true"] { background: #16a34a; }
+
+/* Channel numbers and digit entry */
+.tv-chno { display: inline-block; min-width: calc(3.2ch); margin-right: calc(10 * var(--u)); color: #a1a1aa; font-variant-numeric: tabular-nums; font-weight: 600; }
+.tv-chno-lg { font-size: inherit; margin-right: calc(18 * var(--u)); color: #a1a1aa; font-variant-numeric: tabular-nums; }
+.tv-number-name { font-size: calc(28 * var(--u)); font-weight: 600; text-align: right; margin-top: calc(4 * var(--u)); max-width: 40vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

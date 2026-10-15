@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { api, type Category, type ChannelSummary } from "@/lib/api";
 import { useFavorites } from "@/lib/favorites";
 import { fmtTime, nowTs, progress } from "@/lib/format";
-import { ChannelLogo, ChannelTile, CtaTile, TvRow, qualityBadge } from "@/components/tv/TvTile";
+import { ChannelLogo, ChannelNo, ChannelTile, CtaTile, TvRow, qualityBadge } from "@/components/tv/TvTile";
+import { remember } from "@/components/tv/numbers";
 import { IconGrid, IconPlay, IconStar } from "@/components/tv/icons";
 import { nsfwParam, tvList, tvRecent } from "@/components/tv/tvSettings";
 
@@ -25,7 +26,7 @@ export default function HomePage() {
     if (favs.length === 0) { setFavItems([]); return; }
     const ac = new AbortController();
     api.channels({ favorites: favs, limit: 50, withNow: true, nsfw: nsfwParam() }, ac.signal)
-      .then((r) => setFavItems(r.items))
+      .then((r) => { remember(r.items); setFavItems(r.items); })
       .catch(() => setFavItems([]));
     return () => ac.abort();
   }, [favs.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -37,6 +38,7 @@ export default function HomePage() {
     const ac = new AbortController();
     api.channels({ favorites: ids, limit: 10, withNow: true, nsfw: nsfwParam() }, ac.signal)
       .then((r) => {
+        remember(r.items);
         const byId = new Map(r.items.map((c) => [c.id, c] as const));
         setRecent(ids.map((id) => byId.get(id)).filter((c): c is ChannelSummary => !!c));
       })
@@ -53,7 +55,7 @@ export default function HomePage() {
         setRows(top.map((cat) => ({ cat, items: null, error: false })));
         const results = await Promise.all(top.map((cat) =>
           api.channels({ category: [cat.id], hasStream: true, limit: ROW_SIZE, withNow: true, nsfw: nsfwParam() }, ac.signal)
-            .then((r) => ({ id: cat.id, items: r.items, error: false }))
+            .then((r) => { remember(r.items); return { id: cat.id, items: r.items, error: false }; })
             .catch(() => ({ id: cat.id, items: [] as ChannelSummary[], error: true }))));
         setRows(top.map((cat, i) => ({ cat, items: results[i].items, error: results[i].error })));
       })
@@ -116,7 +118,7 @@ function Hero({ ch, label, onPlay }: { ch: ChannelSummary; label: string; list: 
       <div className="tv-hero-logo"><ChannelLogo src={ch.logo} name={ch.name} /></div>
       <div className="tv-hero-body">
         <div className="tv-eyebrow">{label}</div>
-        <div className="tv-hero-title">{ch.name}</div>
+        <div className="tv-hero-title"><ChannelNo n={ch.number} className="tv-chno-lg" />{ch.name}</div>
         <div className="tv-hero-next">
           {ch.flag ? `${ch.flag} ` : ""}{ch.countryName ?? ""}{ch.categories.length ? ` · ${ch.categories.map((c) => c.charAt(0).toUpperCase() + c.slice(1)).join(", ")}` : ""}
           {badge && <span className={badge.cls} style={{ marginLeft: "0.6em" }}>{badge.label}</span>}

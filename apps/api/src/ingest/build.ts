@@ -501,6 +501,7 @@ export function buildCatalog(db: Db, rawDir: string, now = Math.floor(Date.now()
     db.prepare("UPDATE channels SET online_count = (SELECT COUNT(*) FROM streams s WHERE s.channel = channels.id AND s.status = 'online')").run();
 
     insMeta.run("last_ingest", String(now));
+    insMeta.run("last_ingest_ms", String(Date.now() - t0));
     insMeta.run(
       "counts",
       JSON.stringify({ channels: plan.channels.length, streams: plan.streams.length, channelsWithStreams }),

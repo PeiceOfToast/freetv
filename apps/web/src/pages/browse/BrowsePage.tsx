@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { useSearchParams } from "react-router-dom";
 import { useFavorites } from "@/lib/favorites";
 import { nowTs } from "@/lib/format";
-import type { SortKey } from "@/lib/api";
+import { api, type SortKey } from "@/lib/api";
+import { useKeyHandler } from "@/lib/shortcuts";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SearchBar } from "@/components/browse/SearchBar";
@@ -35,6 +36,14 @@ export default function BrowsePage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(readSidebarOpen);
   const [now, setNow] = useState(nowTs);
+  const [health, setHealth] = useState<{ probed: number; online: number } | null>(null);
+
+  // Probe totals for the "n of m checked streams online" line. Failure just hides it.
+  useEffect(() => {
+    const ac = new AbortController();
+    api.meta(ac.signal).then((m) => setHealth(m.health ?? null)).catch(() => undefined);
+    return () => ac.abort();
+  }, []);
 
   // Re-render every 30 s so the "Now" progress bars stay current.
   useEffect(() => {
@@ -61,6 +70,12 @@ export default function BrowsePage() {
     window.scrollTo({ top: 0 });
   }, [update]);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
+
+  // "/" focuses search; "f" toggles favorites only. Both are ignored while typing (see lib/shortcuts).
+  useKeyHandler({
+    "/": () => document.getElementById("browse-search")?.focus(),
+    f: () => change({ favorites: !state.favorites }),
+  });
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((open) => {
       const next = !open;
@@ -161,6 +176,9 @@ export default function BrowsePage() {
             onView={setView}
             onSort={(s) => change({ sort: s, order: null })}
             onOrder={() => change({ order: effectiveOrder(state) === "asc" ? "desc" : "asc" })}
+            health={health}
+            online={state.online}
+            onOnline={(v) => change({ online: v })}
             onOpenFilters={() => setDrawerOpen(true)}
             sidebarOpen={sidebarOpen}
             onToggleSidebar={toggleSidebar}

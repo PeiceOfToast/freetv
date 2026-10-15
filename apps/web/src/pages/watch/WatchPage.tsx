@@ -4,6 +4,8 @@ import { api, ApiError, type ChannelDetail, type Programme, type StreamInfo } fr
 import { favorites, useIsFavorite } from "@/lib/favorites";
 import { fmtTime, nowTs, progress } from "@/lib/format";
 import { Player } from "@/components/player/Player";
+import { ReducedDataToggle } from "@/components/player/ReducedDataToggle";
+import { useSaveData } from "@/lib/network";
 import { CastButton } from "@/components/cast/CastButton";
 import { CastBar } from "@/components/cast/CastBar";
 import { AirPlayButton } from "@/components/cast/AirPlayButton";
@@ -25,6 +27,7 @@ export default function WatchPage() {
   const [now, setNow] = useState(() => nowTs());
   const [copied, setCopied] = useState(false);
   const isFav = useIsFavorite(id);
+  const [saveData] = useSaveData();
 
   // Channel detail.
   useEffect(() => {
@@ -133,7 +136,8 @@ export default function WatchPage() {
 
       <div className="watch-split grid gap-6 lg:grid-cols-3">
         <div className="min-w-0 lg:col-span-2">
-          <Player key={ch.id} streams={ch.streams} />
+          {/* Remounted when the reduced-data preference changes, so the new stream order starts from the top. */}
+          <Player key={`${ch.id}:${saveData ? "reduced" : "full"}`} streams={ch.streams} />
           <CastBar />
         </div>
 
@@ -246,7 +250,13 @@ export default function WatchPage() {
       </section>
 
       <section aria-label="Streams" className="space-y-2">
-        <h2 className="text-sm font-semibold uppercase tracking-wide opacity-70">Streams</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wide opacity-70">Streams</h2>
+          <ReducedDataToggle id="watch-reduced-data" />
+        </div>
+        <p className="text-xs opacity-60">
+          Listed in the order FreeTV tries them: working streams first. {saveData ? "Reduced data is on, so the lowest quality plays first." : ""}
+        </p>
         <StreamList streams={ch.streams} />
       </section>
     </div>
@@ -265,7 +275,8 @@ function StreamList({ streams }: { streams: StreamInfo[] }) {
           {s.labels.map((l) => (
             <Badge key={l}>{l}</Badge>
           ))}
-          {s.proxyUrl && <Badge>Relay available</Badge>}
+          {s.relayOnly && <Badge>Relay only</Badge>}
+          {s.proxyUrl && !s.relayOnly && <Badge>Relay available</Badge>}
           <OnlineBadge online={s.online} />
         </li>
       ))}

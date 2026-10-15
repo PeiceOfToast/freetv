@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/Button";
+import { Chip } from "@/components/ui/Chip";
 import { SORT_OPTIONS } from "./state";
 import type { SortKey } from "@/lib/api";
 import type { ViewMode } from "./useView";
@@ -6,6 +7,10 @@ import type { ViewMode } from "./useView";
 export interface ToolbarProps {
   total: number | null;
   rangeText: string | null;
+  /** Probe totals from /api/meta. The summary and the "Only online" chip show only when something was probed. */
+  health: { probed: number; online: number } | null;
+  online: boolean;
+  onOnline: (v: boolean) => void;
   sort: SortKey;
   order: "asc" | "desc";
   hasQuery: boolean;
@@ -28,19 +33,33 @@ export function Toolbar(p: ToolbarProps) {
   const sortOptions = SORT_OPTIONS.filter((o) => o.value !== "relevance" || p.hasQuery);
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-      <div className="mr-auto min-w-0" aria-live="polite">
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          {p.total === null ? (
-            <span className="text-zinc-400">Loading channels…</span>
-          ) : (
-            <>
-              <span className="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">{p.total.toLocaleString()}</span>{" "}
-              {p.total === 1 ? "channel" : "channels"}
-              {p.rangeText && <span className="text-zinc-400 dark:text-zinc-500"> · {p.rangeText}</span>}
-            </>
-          )}
-        </p>
+      <div className="mr-auto min-w-0">
+        <div aria-live="polite">
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            {p.total === null ? (
+              <span className="text-zinc-400">Loading channels…</span>
+            ) : (
+              <>
+                <span className="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">{p.total.toLocaleString()}</span>{" "}
+                {p.total === 1 ? "channel" : "channels"}
+                {p.rangeText && <span className="text-zinc-400 dark:text-zinc-500"> · {p.rangeText}</span>}
+              </>
+            )}
+          </p>
+        </div>
+        {p.health && p.health.probed > 0 && (
+          <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+            <span className="tabular-nums">{p.health.online.toLocaleString()}</span> of{" "}
+            <span className="tabular-nums">{p.health.probed.toLocaleString()}</span> checked streams online
+          </p>
+        )}
       </div>
+
+      {p.health && p.health.probed > 0 && (
+        <Chip active={p.online} onClick={() => p.onOnline(!p.online)} title="Hide channels whose last health check failed">
+          Only online
+        </Chip>
+      )}
 
       <div className="lg:hidden">
       <Button variant="secondary" size="sm" onClick={p.onOpenFilters} aria-haspopup="dialog">

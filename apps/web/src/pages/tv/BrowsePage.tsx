@@ -4,7 +4,8 @@ import { api, type ChannelSummary, type Category, type Country } from "@/lib/api
 import { useFavorites } from "@/lib/favorites";
 import { ChannelTile } from "@/components/tv/TvTile";
 import { OnScreenKeyboard } from "@/components/tv/OnScreenKeyboard";
-import { nsfwParam, tvList } from "@/components/tv/tvSettings";
+import { nsfwParam, tvList, tvRecent } from "@/components/tv/tvSettings";
+import { remember } from "@/components/tv/numbers";
 
 const PAGE = 48;
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
@@ -16,8 +17,10 @@ export default function BrowsePage() {
   const category = params.get("category") ?? "";
   const country = params.get("country") ?? "";
   const fav = params.get("fav") === "1";
+  const recent = params.get("recent") === "1";
   const searchMode = params.get("search") === "1";
   const favs = useFavorites();
+  const recentIds = recent ? tvRecent.list() : [];
 
   const [cats, setCats] = useState<Category[]>([]);
   const [countries, setCountries] = useState<Country[]>([]);
@@ -45,20 +48,21 @@ export default function BrowsePage() {
   }, [q]);
 
   // Reset to page 1 whenever a filter changes.
-  const filterKey = [category, country, fav ? favs.join(",") : "", searchMode ? debouncedQ : ""].join("|");
+  const filterKey = [category, country, fav ? favs.join(",") : "", recent ? recentIds.join(",") : "", searchMode ? debouncedQ : ""].join("|");
   useEffect(() => { setPage(1); }, [filterKey]);
 
   const showEmptyFav = fav && favs.length === 0;
+  const showEmptyRecent = recent && recentIds.length === 0;
 
   useEffect(() => {
-    if (showEmptyFav) { setItems([]); setTotal(0); return; }
+    if (showEmptyFav || showEmptyRecent) { setItems([]); setTotal(0); return; }
     const ac = new AbortController();
     setLoading(true);
     setError(false);
     api.channels({
       category: category ? [category] : undefined,
       country: country ? [country] : undefined,
-      favorites: fav ? favs : undefined,
+      favorites: recent ? recentIds : fav ? favs : undefined,
       q: searchMode && debouncedQ ? debouncedQ : undefined,
       sort: searchMode && debouncedQ ? "relevance" : "name",
       withNow: true,
@@ -67,6 +71,15 @@ export default function BrowsePage() {
       page,
     }, ac.signal)
       .then((r) => {
+        remember(r.items);
+        if (recent) {
+          // Recently watched: the API returns name order, so put them back in watch order.
+          const byId = new Map(r.items.map((c) => [c.id, c] as const));
+          const ordered = recentIds.map((x) => byId.get(x)).filter((c): c is ChannelSummary => !!c);
+          setTotal(ordered.length);
+          setItems(ordered);
+          return;
+        }
         setTotal(r.total);
         setItems((prev) => (page === 1 ? r.items : [...prev, ...r.items]));
       })
@@ -85,6 +98,8 @@ export default function BrowsePage() {
   };
 
   const setQuery = (v: string) => { setQ(v); setFilter({ q: v || null }); };
+  // Category and "All" leave the recently-watched view; Recently watched clears the category.
+  const setCategory = (id: string | null) => setFilter({ category: id, recent: null });
 
   const countriesForLetter = useMemo(
     () => countries.filter((c) => c.name.toUpperCase().startsWith(letter)),
@@ -92,18 +107,19 @@ export default function BrowsePage() {
   );
 
   const open = (i: number) => {
-    const label = searchMode ? `Search: ${debouncedQ}` : fav ? "Favorites" : category ? `Category: ${category}` : "Browse";
+    const label = searchMode ? `Search: ${debouncedQ}` : fav ? "Favorites" : recent ? "Recently watched" : category ? `Category: ${category}` : "Browse";
     tvList.set({ label, ids: items.map((c) => c.id), index: i, returnTo: loc.pathname + loc.search });
     nav(`/tv/watch/${encodeURIComponent(items[i].id)}`);
   };
 
   const hasMore = items.length < total;
-  const title = fav ? "Favorites" : searchMode ? "Search" : category ? (cats.find((c) => c.id === category)?.name ?? "Browse") : "Browse";
+  const title = fav ? "Favorites" : recent ? "Recently watched" : searchMode ? "Search" : category ? (cats.find((c) => c.id === category)?.name ?? "Browse") : "Browse";
 
   const grid = (
     <>
       <h1 className="tv-h1">{title}{!loading && !error ? <span className="tv-small"> · {total} channels</span> : null}</h1>
       {showEmptyFav && <div className="tv-small">No favorites yet. Add some from the website, then they appear here.</div>}
+      {showEmptyRecent && <div className="tv-small">Nothing watched yet. Channels you open appear here.</div>}
       {error && <div className="tv-small">Couldn't load channels. Press Back and try again.</div>}
       <div className="tv-grid">
         {items.map((c, i) => (
@@ -117,7 +133,7 @@ export default function BrowsePage() {
           </button>
         )}
       </div>
-      {!loading && !error && items.length === 0 && !showEmptyFav && (
+      {!loading && !error && items.length === 0 && !showEmptyFav && !showEmptyRecent && (
         <div className="tv-small" style={{ marginTop: 20 }}>No channels match.</div>
       )}
     </>
@@ -126,15 +142,17 @@ export default function BrowsePage() {
   return (
     <div className="tv-scroll">
       <div className="tv-chips" role="group" aria-label="Categories">
-        <button type="button" data-nav tabIndex={0} className="tv-chip" aria-pressed={!category}
-          onClick={() => setFilter({ category: null })}>All</button>
+        <button type="button" data-nav tabIndex={0} className="tv-chip" aria-pressed={recent}
+          onClick={() => setFilter({ recent: recent ? null : "1", category: null })}>Recently watched</button>
+        <button type="button" data-nav tabIndex={0} className="tv-chip" aria-pressed={!category && !recent}
+          onClick={() => setCategory(null)}>All</button>
         {cats.map((c) => (
-          <button key={c.id} type="button" data-nav tabIndex={0} className="tv-chip" aria-pressed={category === c.id}
-            onClick={() => setFilter({ category: c.id })}>{c.name}</button>
+          <button key={c.id} type="button" data-nav tabIndex={0} className="tv-chip" aria-pressed={category === c.id && !recent}
+            onClick={() => setCategory(c.id)}>{c.name}</button>
         ))}
       </div>
 
-      {!fav && !searchMode && (
+      {!fav && !recent && !searchMode && (
         <>
           <div className="tv-chips" role="group" aria-label="Countries by letter">
             {LETTERS.map((l) => (

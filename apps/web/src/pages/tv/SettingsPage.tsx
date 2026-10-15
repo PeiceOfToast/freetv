@@ -58,6 +58,14 @@ export default function SettingsPage() {
       </div>
 
       <div className="tv-setting">
+        <span>Show channel numbers</span>
+        <button type="button" data-nav tabIndex={0} className="tv-toggle" aria-pressed={s.showNumbers}
+          onClick={() => tvSettings.set({ showNumbers: !s.showNumbers })}>
+          {s.showNumbers ? "On" : "Off"}
+        </button>
+      </div>
+
+      <div className="tv-setting">
         <span>Exit to the website</span>
         <a data-nav tabIndex={0} href="/" className="tv-toggle" style={{ color: "inherit", textDecoration: "none" }}>Open website</a>
       </div>

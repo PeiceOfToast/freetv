@@ -2,6 +2,9 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode }
 import type Hls from "hls.js";
 import type { StreamInfo } from "@/lib/api";
 import { setMediaSession, setPlaybackState } from "@/lib/media-session";
+import { useSaveData } from "@/lib/network";
+import { orderStreams } from "./order";
+import { ReducedDataToggle } from "./ReducedDataToggle";
 
 export interface PlayerProps {
   streams: StreamInfo[];
@@ -16,10 +19,11 @@ export interface PlayerProps {
 }
 
 interface Attempt {
-  key: string; // `${streamPosition}:${kind}`
+  key: string; // `${catalogIndex}:${kind}`, stable across re-orderings
   kind: "direct" | "proxy";
   label: string;
   url: string;
+  quality: string | null;
 }
 
 /** lib.dom omits ScreenOrientation.lock, which Chromium and Android support. */
@@ -86,14 +90,22 @@ function streamLabel(s: StreamInfo, pos: number): string {
   return parts.length ? parts.join(" · ") : s.title || `Stream ${pos + 1}`;
 }
 
-/** Every candidate in playback order: all direct URLs first, then all relay URLs. */
+/**
+ * Every candidate in playback order: all direct URLs first, then all relay URLs. Streams that need a
+ * User-Agent or Referer (relayOnly) skip the direct attempt, because the browser cannot send those
+ * headers. A relayOnly stream with no relay URL is dropped.
+ */
 function allAttempts(streams: StreamInfo[]): Attempt[] {
   const out: Attempt[] = [];
   streams.forEach((s, pos) => {
-    if (s.url) out.push({ key: `${pos}:direct`, kind: "direct", label: `Direct · ${streamLabel(s, pos)}`, url: s.url });
+    if (s.url && !s.relayOnly) {
+      out.push({ key: `${s.index}:direct`, kind: "direct", label: `Direct · ${streamLabel(s, pos)}`, url: s.url, quality: s.quality });
+    }
   });
   streams.forEach((s, pos) => {
-    if (s.proxyUrl) out.push({ key: `${pos}:proxy`, kind: "proxy", label: `Relay · ${streamLabel(s, pos)}`, url: s.proxyUrl });
+    if (s.proxyUrl) {
+      out.push({ key: `${s.index}:proxy`, kind: "proxy", label: `Relay · ${streamLabel(s, pos)}`, url: s.proxyUrl, quality: s.quality });
+    }
   });
   return out;
 }
@@ -136,12 +148,15 @@ export function Player({ streams, autoplay = true, className = "", title, subtit
   const [run, setRun] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [policyMuted, setPolicyMuted] = useState(false);
-  const [via, setVia] = useState<"direct" | "proxy" | null>(null);
+  /** Key of the attempt whose manifest loaded. Set only on success, so the status line can name it. */
+  const [okKey, setOkKey] = useState<string | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const [pipActive, setPipActive] = useState(false);
   const canPip = typeof document !== "undefined" && document.pictureInPictureEnabled === true;
+  const [saveData] = useSaveData();
 
-  const every = useMemo(() => allAttempts(streams), [streams]);
+  const ordered = useMemo(() => orderStreams(streams, saveData), [streams, saveData]);
+  const every = useMemo(() => allAttempts(ordered), [ordered]);
   const plan = useMemo(
     () => (manual === "auto" ? every : every.filter((a) => a.key === manual)),
     [every, manual],
@@ -149,6 +164,7 @@ export function Player({ streams, autoplay = true, className = "", title, subtit
   const planKey = plan.map((a) => a.key).join("|");
   const cur = plan[attempt];
   const exhausted = plan.length === 0 || attempt >= plan.length;
+  const okAttempt = cur && okKey === cur.key ? cur : null;
 
   // Restore volume once.
   useEffect(() => {
@@ -164,6 +180,7 @@ export function Player({ streams, autoplay = true, className = "", title, subtit
     const video = videoRef.current;
     const a = plan[attempt];
     if (!video || !a) return;
+    setOkKey(null);
 
     let parsed = false;
     let dead = false;
@@ -192,7 +209,7 @@ export function Player({ streams, autoplay = true, className = "", title, subtit
       if (dead || parsed) return;
       parsed = true;
       window.clearTimeout(timer);
-      setVia(a.kind);
+      setOkKey(a.key);
       if (autoplay) tryPlay(video, () => { policyMutedRef.current = true; setPolicyMuted(true); });
     };
 
@@ -310,6 +327,9 @@ export function Player({ streams, autoplay = true, className = "", title, subtit
       /* not available for this stream */
     }
   };
+  // The keyboard handler is registered once, so it reaches the latest togglePip through this ref.
+  const pipRef = useRef<() => void>(() => undefined);
+  pipRef.current = () => void togglePip();
 
   // Screen Wake Lock: keep the display on while playing. The browser drops the lock when the
   // page is hidden, so it is re-requested when the page becomes visible again.
@@ -380,6 +400,12 @@ export function Player({ streams, autoplay = true, className = "", title, subtit
         case "f":
           void toggleFullscreen();
           break;
+        case "p":
+          if (canPip) {
+            e.preventDefault();
+            pipRef.current();
+          }
+          break;
         case "ArrowLeft":
         case "ArrowRight": {
           const seek = v.seekable;
@@ -442,11 +468,14 @@ export function Player({ streams, autoplay = true, className = "", title, subtit
     );
   }
 
+  // Status: "Trying source N of M…" until a manifest loads, then the route and quality that won.
   let status = "";
-  if (!exhausted && cur) {
+  if (okAttempt) {
+    const route = okAttempt.kind === "proxy" ? "relay" : "direct";
+    const verb = playing ? "Playing" : "Ready";
+    status = [`${verb} · ${route}`, okAttempt.quality].filter(Boolean).join(" · ");
+  } else if (!exhausted && cur) {
     status = `Trying source ${attempt + 1} of ${plan.length}…`;
-  } else if (playing && via === "proxy") {
-    status = "Playing via relay";
   }
 
   return (
@@ -545,7 +574,13 @@ export function Player({ streams, autoplay = true, className = "", title, subtit
             ))}
           </select>
         </label>
-        {status && <span className="opacity-70">{status}</span>}
+        <ReducedDataToggle id="player-reduced-data" onChange={() => setAttempt(0)} />
+        {saveData && (
+          <span className="rounded border border-emerald-500/50 px-1.5 py-px text-xs font-medium text-emerald-700 dark:text-emerald-400">
+            Reduced data
+          </span>
+        )}
+        <span role="status" aria-live="polite" className="opacity-70">{status}</span>
       </div>
     </div>
   );

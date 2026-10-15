@@ -59,6 +59,7 @@ export function SearchBar({ value, onCommit }: SearchBarProps) {
         <path d="M13.5 13.5L17 17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
       </svg>
       <input
+        id="browse-search"
         ref={inputRef}
         type="search"
         value={draft}

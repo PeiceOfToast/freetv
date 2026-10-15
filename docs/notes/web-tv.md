@@ -61,3 +61,36 @@ Set `build.target` to `es2017` (Tizen 5 is roughly Chrome 69 and webOS 4 is roug
 ## Build warning
 
 `vite build` warns that `hls.js` is both dynamically imported by `components/player/Player.tsx` and statically imported by `components/tv/TvPlayer.tsx`. The bundle still builds. The warning comes from the shared player code, so it is for the watch track to resolve. Either import `hls.js` statically in `Player.tsx` or drop the dynamic import.
+
+## Round 3 (2026-10-15): channel numbers, stream order, relay-only
+
+Changes (files: `pages/tv/**`, `components/tv/**`; `lib/api.ts` and `docs/API.md` unchanged).
+
+- **Real channel numbers.** Tiles, hero, watch overlay, channel strip and guide rows show `number` from the API (`ChannelNo` in `TvTile.tsx`, hidden when null or when Settings > "Show channel numbers" is off). The list index is no longer shown anywhere.
+- **`components/tv/numbers.ts`.** `remember(items)` records number to id/name for every channel the TV UI loads (Home, Browse, Guide, Watch, strip). `lookup(n)` reads the map without fetching. `resolve(n)` uses the map first, then loads the name-sorted page `ceil(n / 200)` once (pages are cached and de-duplicated in flight).
+  - The lookup request adds `nsfw: true`. Numbers cover every channel, NSFW included. Checked against the real catalog (10,278 numbered channels): with the default `nsfw` filter, 3,171 numbers land on the wrong page; with `nsfw: true`, all 10,278 match their page position exactly.
+- **Digit entry on /tv/watch** means "go to channel number N". While typing, the box shows the matched name under the digits ("Looking up…" while a page loads, "No channel N" when missing). Commit happens after 1.5 s idle, as before.
+- **Channel up/down (ChannelUp/Down keys)**: when the current channel is in a list of 2+ (favorites, category, search, strip), it zaps the list as before. Otherwise (direct arrival, or after a number jump that is not in the list) it steps by number, skipping up to 10 missing numbers. Arrow keys are unchanged.
+- **Number jump not in the current list** replaces the zapping list with that single channel and keeps the Back target.
+- **TvPlayer.** Stream order from the API is kept. The preferred-quality setting now only reorders inside each health group (online, never-probed, offline), so it no longer moves an offline stream ahead of an online one. `relayOnly` streams skip the direct attempt. "Prefer relay" still puts relay attempts first. The transport label resets per attempt and reads "Connecting · direct|relay" until playback starts, then "Playing · direct|relay".
+- **Guide.** Number in the channel column. Digit entry jumps to that channel's row if it is in the grid (focus moves to its first programme); otherwise "Channel N isn't in this guide". The number box shows the channel name under the digits.
+- **Browse.** Numbers on tiles. New "Recently watched" chip (`?recent=1`) lists `tvRecent` in watch order, and shows "Nothing watched yet" when empty. Category and "All" chips leave that view.
+- **Settings.** "Show channel numbers" toggle, default on (`tvSettings.showNumbers`).
+- CSS: `.tv-chno`, `.tv-chno-lg`, `.tv-number-name`; `.tv-number` and `.tv-msg` now have `z-index: 20` (the guide's programme tiles were painting over the number box).
+
+Verification (2026-10-15):
+
+- `apps/web`: `npm run build` passes with zero `tsc` errors.
+- `e2e`: `npm test` passes (37 passed, 2 skipped). The first runs were invalid because another process held ports 3000 and 4173 at the same time; the rerun was clean.
+- Overlay status on the e2e stack (fake HLS origin, scratch spec outside the repo): "Playing · direct" with `preferRelay` off, "Playing · relay" with it on.
+- Real catalog, 1920x1080, Playwright (Chromium, no-sandbox), keyboard only, against the API on :3000 and `vite preview` on :4174. Stream playback cannot work in this sandbox (no internet), so the watch page shows "Couldn't play" with "Connecting · 1080p"; the numbers themselves work:
+  - Typing 1, 2, 3 on `/tv/watch/AndTV.in` shows "123" with "48 Hours" under it. After the commit the overlay reads "123  48 Hours".
+  - ChannelUp from a direct arrival on 123 goes to 124 (4Dmas Noticias TV).
+  - Typing 5413 in the guide jumps focus to the NBC row.
+  - Screenshots: `/tmp/claude-0/-home-claude/a71a92df-0685-5acd-9194-6f3fd5c66155/scratchpad/tv-r3/01-tv-home.png` (home), `.../tv-r3/02-watch-typed-123.png` (typed number), `.../tv-r3/03-watch-after-123.png` (committed overlay), plus `04-guide-typed.png`, `05-guide-jumped.png`, `06-browse-recent.png`.
+
+Known limits:
+
+- A number added after the first ingest is numbered at the end, not in name order. The page guess cannot find it, and it shows "No channel N". Fixing this needs a number lookup in the API, which the frozen contract does not have.
+- In number mode the channel strip shows only the current channel, not the neighbours by number.
+- Typing "0" alone does nothing. Numbers start at 1.

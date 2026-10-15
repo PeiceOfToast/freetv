@@ -4,12 +4,14 @@ import { api, type ChannelDetail, type ChannelSummary } from "@/lib/api";
 import { fmtTime, nowTs, progress } from "@/lib/format";
 import { focusEl, focusFirst, installSpatialNav, pushBack, tvKeys, type TvKey } from "@/lib/spatial-nav";
 import { TvPlayer, type TvPlayerState } from "@/components/tv/TvPlayer";
-import { ChannelLogo, qualityBadge } from "@/components/tv/TvTile";
+import { ChannelLogo, ChannelNo, qualityBadge } from "@/components/tv/TvTile";
 import { tvList, tvRecent, type TvList } from "@/components/tv/tvSettings";
+import { lookup, remember, resolve } from "@/components/tv/numbers";
 
 const OVERLAY_MS = 4000;
 const DIGIT_MS = 1500;
 const STRIP_WINDOW = 15; // channels either side of the current one in the strip
+const NUMBER_STEP_TRIES = 10; // channel up/down by number skips up to this many missing numbers
 
 function resolveList(id: string): TvList {
   const cur = tvList.get();
@@ -33,12 +35,14 @@ export default function WatchPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [strip, setStrip] = useState(false);
   const [stripItems, setStripItems] = useState<ChannelSummary[] | null>(null);
+  const [hint, setHint] = useState<{ n: number; state: "found" | "looking" | "missing"; name?: string } | null>(null);
 
   const hideTimer = useRef<number | undefined>(undefined);
   const digitTimer = useRef<number | undefined>(undefined);
   const msgTimer = useRef<number | undefined>(undefined);
   const digitsRef = useRef("");
   const stripRef = useRef<HTMLDivElement>(null);
+  const hintSeq = useRef(0); // latest number preview wins
 
   // This route sits outside the shell, so it installs the global remote/keyboard handler itself.
   useEffect(() => { installSpatialNav(); }, []);
@@ -50,7 +54,7 @@ export default function WatchPage() {
     setLoadError(false);
     setPState({ playing: false, via: null, attempt: 0, of: 0, failed: false });
     api.channel(id, ac.signal)
-      .then((d) => { setDetail(d); tvRecent.push(d.id); })
+      .then((d) => { remember([d]); setDetail(d); tvRecent.push(d.id); })
       .catch(() => { if (!ac.signal.aborted) setLoadError(true); });
     return () => ac.abort();
   }, [id]);
@@ -62,18 +66,42 @@ export default function WatchPage() {
     if (!hold) hideTimer.current = window.setTimeout(() => setOverlay(false), OVERLAY_MS);
   };
 
-  const goTo = (index: number) => {
-    const target = list.ids[index];
-    if (!target || target === id) return;
-    tvList.setIndex(index);
+  // Zapping within a list (ChannelUp/Down while the channel is in the list) keeps the list order.
+  const inList = list.ids.length > 1 && list.ids.includes(id);
+
+  // Go to a channel by id. Joins the current list when it is there, else starts a one-channel list
+  // that keeps the Back target, so channel up/down then moves by number from here.
+  const goToId = (target: string) => {
+    if (!target || target === id) { showOverlay(); return; }
+    const at = list.ids.indexOf(target);
+    if (at >= 0) tvList.setIndex(at);
+    else tvList.set({ label: "", ids: [target], index: 0, returnTo: list.returnTo || "/tv" });
     nav(`/tv/watch/${encodeURIComponent(target)}`, { replace: true });
   };
 
-  const zap = (dir: 1 | -1) => {
-    if (list.ids.length < 2) { showOverlay(); return; }
+  const zapList = (dir: 1 | -1) => {
     const n = list.ids.length;
-    goTo((list.index + dir + n) % n);
+    goToId(list.ids[(list.index + dir + n) % n]);
     showOverlay();
+  };
+
+  // No list (direct arrival): step by channel number, skipping numbers that are not in the catalog.
+  const stepNumber = async (dir: 1 | -1) => {
+    const cur = detail?.number;
+    if (typeof cur !== "number") { flash("This channel has no number"); showOverlay(); return; }
+    for (let k = 1; k <= NUMBER_STEP_TRIES; k++) {
+      const n = cur + dir * k;
+      if (n < 1) break;
+      const c = await resolve(n).catch(() => null);
+      if (c) { goToId(c.id); showOverlay(); return; }
+    }
+    flash(`No channel ${cur + dir}`);
+    showOverlay();
+  };
+
+  const zap = (dir: 1 | -1) => {
+    if (inList) zapList(dir);
+    else void stepNumber(dir);
   };
 
   const flash = (text: string) => {
@@ -82,19 +110,27 @@ export default function WatchPage() {
     msgTimer.current = window.setTimeout(() => setMsg(null), 2500);
   };
 
-  const commitDigits = () => {
+  // Digits mean "go to channel number N". Show the name it resolves to while typing.
+  const previewNumber = (n: number) => {
+    const my = ++hintSeq.current;
+    const hit = lookup(n);
+    if (hit) { setHint({ n, state: "found", name: hit.name }); return; }
+    setHint({ n, state: "looking" });
+    resolve(n)
+      .then((c) => { if (my === hintSeq.current) setHint(c ? { n, state: "found", name: c.name } : { n, state: "missing" }); })
+      .catch(() => { if (my === hintSeq.current) setHint({ n, state: "missing" }); });
+  };
+
+  const commitDigits = async () => {
     const n = parseInt(digitsRef.current, 10);
     digitsRef.current = "";
     setDigits("");
+    setHint(null);
+    hintSeq.current++;
     if (!n) { showOverlay(); return; }
-    const idx = n - 1;
-    if (idx >= 0 && idx < list.ids.length) {
-      goTo(idx);
-      showOverlay();
-    } else {
-      flash(`No channel ${n} in this list`);
-      showOverlay();
-    }
+    const c = await resolve(n).catch(() => null);
+    if (!c) { flash(`No channel ${n}`); showOverlay(); return; }
+    goToId(c.id);
   };
   const commitRef = useRef(commitDigits);
   commitRef.current = commitDigits;
@@ -103,9 +139,10 @@ export default function WatchPage() {
     const next = (digitsRef.current + String(d)).slice(-4);
     digitsRef.current = next;
     setDigits(next);
+    previewNumber(parseInt(next, 10));
     showOverlay(true);
     window.clearTimeout(digitTimer.current);
-    digitTimer.current = window.setTimeout(() => commitRef.current(), DIGIT_MS);
+    digitTimer.current = window.setTimeout(() => { void commitRef.current(); }, DIGIT_MS);
   };
 
   const togglePlay = () => {
@@ -174,6 +211,7 @@ export default function WatchPage() {
     setStripItems(null);
     api.channels({ favorites: ids, limit: 200, withNow: true }, ac.signal)
       .then((r) => {
+        remember(r.items);
         const byId = new Map(r.items.map((c) => [c.id, c] as const));
         setStripItems(ids.map((x) => byId.get(x)).filter((c): c is ChannelSummary => !!c));
       })
@@ -204,8 +242,10 @@ export default function WatchPage() {
   const now = detail?.now ?? null;
   const next = detail?.next ?? null;
   const badge = qualityBadge(detail?.streams[0]?.quality ?? null);
-  const viaLabel = pState.via === "relay" ? "Relay" : pState.via === "direct" ? "Direct" : "Connecting";
-  const number = list.ids.length > 1 ? list.index + 1 : null;
+  const viaLabel = pState.playing && pState.via ? `Playing · ${pState.via}`
+    : pState.via ? `Connecting · ${pState.via}`
+    : "Connecting";
+  const hintText = !hint ? "" : hint.state === "found" ? (hint.name ?? "") : hint.state === "looking" ? "Looking up…" : `No channel ${hint.n}`;
 
   return (
     <div className="tv-watch" data-testid="tv-watch">
@@ -223,7 +263,12 @@ export default function WatchPage() {
         <div className="tv-msg">Couldn't play {detail.name}.<br /><span className="tv-small">Press Enter to retry, or Back.</span></div>
       )}
 
-      {digits && <div className="tv-number" aria-live="polite">{digits}</div>}
+      {digits && (
+        <div className="tv-number" aria-live="polite">
+          {digits}
+          {hintText && <div className="tv-number-name">{hintText}</div>}
+        </div>
+      )}
       {msg && <div className="tv-msg" style={{ top: "auto", bottom: "24vh", transform: "translateX(-50%)" }}>{msg}</div>}
 
       {detail && overlay && !strip && (
@@ -231,7 +276,7 @@ export default function WatchPage() {
           <div className="tv-info-logo"><ChannelLogo src={detail.logo} name={detail.name} /></div>
           <div className="tv-info-body">
             <div className="tv-h2">
-              {number !== null && <span style={{ marginRight: 14 }}>{number}</span>}
+              <ChannelNo n={detail.number} className="tv-chno-lg" />
               {detail.name}
               {detail.flag ? <span style={{ marginLeft: 12 }}>{detail.flag}</span> : null}
               {badge && <span className={badge.cls}>{badge.label}</span>}
@@ -262,7 +307,6 @@ export default function WatchPage() {
           {stripItems && (
             <div className="tv-row-track">
               {stripItems.map((c) => {
-                const idx = list.ids.indexOf(c.id);
                 const current = c.id === id;
                 return (
                   <button
@@ -273,11 +317,11 @@ export default function WatchPage() {
                     data-current={current ? "1" : undefined}
                     className="tv-tile"
                     style={{ width: 240 }}
-                    onClick={() => { if (!current) goTo(idx); setStrip(false); }}
+                    onClick={() => { if (!current) goToId(c.id); setStrip(false); }}
                     aria-label={c.name}
                   >
                     <div className="tv-tile-logo"><ChannelLogo src={c.logo} name={c.name} /></div>
-                    <div className="tv-tile-name">{idx >= 0 ? `${idx + 1}  ` : ""}{c.name}</div>
+                    <div className="tv-tile-name"><ChannelNo n={c.number} />{c.name}</div>
                     <div className="tv-tile-now">{c.now?.title ? `Now: ${c.now.title}` : ""}</div>
                   </button>
                 );

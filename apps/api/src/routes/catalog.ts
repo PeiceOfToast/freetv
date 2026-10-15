@@ -177,6 +177,15 @@ export async function catalogRoutes(app: FastifyInstance) {
     return { total, page: plan.page, limit: plan.limit, items };
   });
 
+  // Channel number lookup (numbers are per-instance; see schema.sql channel_numbers).
+  app.get("/api/channels/number/:n", async (req) => {
+    const n = intParam((req.params as { n: string }).n, "n", 1, 1);
+    const row = prep(getDb(), "SELECT id FROM channels WHERE number = ? AND blocked = 0").get(n) as { id: string } | undefined;
+    if (!row) throw new HttpError(404, "channel not found");
+    const res = await app.inject({ method: "GET", url: `/api/channels/${encodeURIComponent(row.id)}` });
+    return res.json();
+  });
+
   app.get("/api/channels/:id", async (req) => {
     const db = getDb();
     const { id } = req.params as { id: string };

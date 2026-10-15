@@ -65,6 +65,9 @@ Response:
 ```
 `number` is this instance's stable channel number (null for channels without streams). `now` is included only when `withNow=true` (costs one extra query per page) — the browse grid requests it; `online` is `true|false|null` (null = never probed).
 
+## `GET /api/channels/number/:n`
+Looks up a channel by this instance's channel number; returns the same `ChannelDetail` as below, 404 if unassigned.
+
 ## `GET /api/channels/:id`
 404 if unknown. Returns `ChannelDetail`:
 ```json

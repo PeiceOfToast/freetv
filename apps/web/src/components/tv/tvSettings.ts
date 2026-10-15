@@ -5,13 +5,14 @@ export interface TvSettings {
   hideNsfw: boolean | null; // null = follow API default (hideNsfwDefault)
   preferredQuality: "any" | "sd" | "720p" | "1080p" | "2160p";
   preferRelay: boolean;
+  showNumbers: boolean; // channel numbers on tiles, the hero, the overlay, the strip and guide rows
 }
 
 const KEY = "freetv:tv-settings";
 const RECENT_KEY = "freetv:tv-recent";
 const LIST_KEY = "freetv:tv-list";
 
-const DEFAULTS: TvSettings = { hideNsfw: null, preferredQuality: "any", preferRelay: false };
+const DEFAULTS: TvSettings = { hideNsfw: null, preferredQuality: "any", preferRelay: false, showNumbers: true };
 let cache: TvSettings | null = null;
 const subs = new Set<() => void>();
 
