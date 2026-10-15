@@ -1,5 +1,25 @@
 import type { FastifyInstance } from "fastify";
-// TRACK B: implement /api/stream/:id/:index/play per docs/API.md
+import { getDb } from "../db/index.js";
+import { HttpError, installHttpBehaviour, intParam } from "../lib/http.js";
+import { prep } from "../lib/sql.js";
+import { proxyUrlFor } from "../lib/views.js";
+
 export async function streamRoutes(app: FastifyInstance) {
-  void app;
+  installHttpBehaviour(app);
+
+  app.get("/api/stream/:id/:index/play", async (req) => {
+    const { id, index } = req.params as { id: string; index: string };
+    const idx = intParam(index, "index", 0, 0);
+    const row = prep(getDb(), "SELECT url, user_agent, referrer FROM streams WHERE channel = ? AND idx = ?").get(id, idx) as
+      | { url: string; user_agent: string | null; referrer: string | null }
+      | undefined;
+    if (!row) throw new HttpError(404, "stream not found");
+    const proxyUrl = proxyUrlFor(row.url, row.user_agent, row.referrer);
+    return {
+      url: row.url,
+      ...(proxyUrl !== undefined ? { proxyUrl } : {}),
+      userAgent: row.user_agent,
+      referrer: row.referrer,
+    };
+  });
 }

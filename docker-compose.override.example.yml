@@ -1,0 +1,17 @@
+# Local development overrides. Copy to docker-compose.override.yml (git-ignored by convention;
+# compose picks it up automatically). Publishes the API and relay directly on localhost so
+# you can hit them without Caddy.
+#
+#   cp docker-compose.override.example.yml docker-compose.override.yml
+#   docker compose up -d --build
+#
+# Hot reload is not included: rebuild with `--build` after changing source, or run the
+# apps directly with `npm run dev` (see README "Development").
+services:
+  api:
+    ports:
+      - "127.0.0.1:3000:3000"
+
+  proxy:
+    ports:
+      - "127.0.0.1:3001:3001"

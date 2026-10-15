@@ -1,0 +1,83 @@
+# FreeTV stack. Copy .env.example to .env first (docker compose reads it for interpolation
+# and for COMPOSE_PROFILES). Start: `docker compose up -d`.
+#
+# Images: each service is built from apps/<svc> and tagged ghcr.io/<owner>/freetv-<svc>:<tag>,
+# so you can either build locally (`docker compose up -d --build`) or pull published
+# multi-arch images (`docker compose pull && docker compose up -d`).
+name: freetv
+
+services:
+  web:
+    build:
+      context: ./apps/web
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-freetv}/freetv-web:${FREETV_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    environment:
+      DOMAIN: ${DOMAIN:-}
+      # Caddy site address: the domain (automatic HTTPS) or plain HTTP on :80.
+      SITE_ADDRESS: ${DOMAIN:-:80}
+    volumes:
+      # Directory mount (not a single file) so `git pull` edits are seen without a rebuild.
+      - ./infra/caddy:/etc/caddy:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
+  api:
+    build:
+      context: ./apps/api
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-freetv}/freetv-api:${FREETV_TAG:-latest}
+    restart: unless-stopped
+    mem_limit: 1g
+    environment:
+      IPTV_API_BASE: ${IPTV_API_BASE:-https://iptv-org.github.io/api}
+      INGEST_INTERVAL_HOURS: ${INGEST_INTERVAL_HOURS:-6}
+      HIDE_NSFW_DEFAULT: ${HIDE_NSFW_DEFAULT:-true}
+      PROXY_ENABLED: ${PROXY_ENABLED:-true}
+      PROXY_SECRET: ${PROXY_SECRET:?Set PROXY_SECRET in .env (run infra/scripts/gen-secret.sh)}
+      PROXY_PUBLIC_PATH: ${PROXY_PUBLIC_PATH:-/proxy}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      EPG_FILE: /data/epg/guide.xml
+    volumes:
+      - data:/data
+
+  proxy:
+    profiles: ["proxy"]
+    build:
+      context: ./apps/proxy
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-freetv}/freetv-proxy:${FREETV_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      PROXY_SECRET: ${PROXY_SECRET:?Set PROXY_SECRET in .env (run infra/scripts/gen-secret.sh)}
+      PROXY_PUBLIC_PATH: ${PROXY_PUBLIC_PATH:-/proxy}
+      PROXY_MAX_CONCURRENT: ${PROXY_MAX_CONCURRENT:-200}
+      PROXY_MAX_BYTES: ${PROXY_MAX_BYTES:-52428800}
+
+  epg:
+    profiles: ["epg"]
+    build:
+      context: ./apps/epg
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-freetv}/freetv-epg:${FREETV_TAG:-latest}
+    restart: unless-stopped
+    mem_limit: 2g
+    cpus: 2
+    environment:
+      IPTV_API_BASE: ${IPTV_API_BASE:-https://iptv-org.github.io/api}
+      EPG_SITES: ${EPG_SITES:-all}
+      EPG_DAYS: ${EPG_DAYS:-2}
+      EPG_MAX_CONNECTIONS: ${EPG_MAX_CONNECTIONS:-10}
+      EPG_INTERVAL_HOURS: ${EPG_INTERVAL_HOURS:-12}
+      EPG_RUN_ON_START: ${EPG_RUN_ON_START:-true}
+      EPG_FILE: /data/epg/guide.xml
+    volumes:
+      - data:/data
+
+volumes:
+  data:
+  caddy_data:
+  caddy_config:

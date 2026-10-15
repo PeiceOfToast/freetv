@@ -1,0 +1,88 @@
+#cloud-config
+# FreeTV on Oracle Cloud Always Free: VM.Standard.A1.Flex, Ubuntu 24.04 (aarch64).
+#
+# Before pasting this into the instance's "Initialization script" (cloud-init) box, replace
+# the two placeholders below. See infra/deploy/oracle/README.md.
+#   __REPO_URL__  git URL of your FreeTV fork or the upstream repo, e.g. https://github.com/you/freetv.git
+#   __DOMAIN__    public hostname, e.g. tv.example.com. Leave the value empty for plain HTTP on the IP.
+#
+# Runs once on first boot. Progress: /var/log/freetv-bootstrap.log
+
+write_files:
+  - path: /usr/local/sbin/freetv-bootstrap.sh
+    permissions: "0755"
+    owner: root:root
+    content: |
+      #!/usr/bin/env bash
+      # Idempotent where practical: re-running skips clone and .env creation if already done.
+      set -euo pipefail
+      exec >> /var/log/freetv-bootstrap.log 2>&1
+
+      REPO_URL="__REPO_URL__"
+      DOMAIN="__DOMAIN__"
+      export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a
+
+      if [[ "$REPO_URL" == __* ]]; then
+        echo "REPO_URL placeholder was not replaced; edit cloud-init.yaml" >&2
+        exit 1
+      fi
+      if [[ "$DOMAIN" == __* ]]; then
+        echo "DOMAIN placeholder was not replaced; using plain HTTP on port 80"
+        DOMAIN=""
+      fi
+
+      echo "== packages"
+      # Pre-answer the iptables-persistent prompt so the install does not block.
+      echo "iptables-persistent iptables-persistent/autosave_v4 boolean true" | debconf-set-selections
+      echo "iptables-persistent iptables-persistent/autosave_v6 boolean true" | debconf-set-selections
+      apt-get update
+      apt-get install -y ca-certificates curl git openssl iptables-persistent netfilter-persistent
+
+      echo "== host firewall: allow 80/443 (Oracle images ship a REJECT rule at the end of INPUT)"
+      # Inserted at the top of INPUT so they precede the REJECT rule regardless of its position.
+      for port in 80 443; do
+        iptables -C INPUT -p tcp -m conntrack --ctstate NEW --dport "$port" -j ACCEPT 2>/dev/null \
+          || iptables -I INPUT 1 -p tcp -m conntrack --ctstate NEW --dport "$port" -j ACCEPT
+      done
+      netfilter-persistent save
+
+      echo "== docker engine and compose plugin (Docker's apt repository)"
+      if ! command -v docker >/dev/null 2>&1; then
+        install -m 0755 -d /etc/apt/keyrings
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+        chmod a+r /etc/apt/keyrings/docker.asc
+        . /etc/os-release
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" \
+          > /etc/apt/sources.list.d/docker.list
+        apt-get update
+        apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+      fi
+      systemctl enable --now docker
+
+      echo "== service user"
+      id freetv >/dev/null 2>&1 || useradd --create-home --shell /bin/bash freetv
+      usermod -aG docker freetv
+
+      echo "== code"
+      if [[ ! -d /opt/freetv/.git ]]; then
+        git clone "$REPO_URL" /opt/freetv
+      fi
+      cd /opt/freetv
+
+      echo "== configuration"
+      if [[ ! -f .env ]]; then
+        cp .env.example .env
+        secret="$(openssl rand -hex 32)"
+        sed -i "s|^PROXY_SECRET=.*|PROXY_SECRET=${secret}|" .env
+        sed -i "s|^DOMAIN=.*|DOMAIN=${DOMAIN}|" .env
+      fi
+      chmod 600 .env
+      chown -R freetv:freetv /opt/freetv
+
+      echo "== start the stack (built on this host, which is native arm64)"
+      docker compose up -d --build
+      docker compose ps
+      echo "== done"
+
+runcmd:
+  - [/usr/local/sbin/freetv-bootstrap.sh]

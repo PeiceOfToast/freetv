@@ -11,7 +11,15 @@ Clean browse/search UI, categories, countries, languages, favorites, and a TV gu
 See `docs/PLAN.md` for the project plan, `docs/ARCHITECTURE.md` for how it fits together,
 `docs/API.md` for the HTTP contract and `docs/DEPLOY.md` for hosting (including Oracle Cloud's free tier).
 
-<!-- DEPLOY-SECTION: filled in by infra track -->
+## Quick start
+
+```sh
+git clone <repo-url> freetv && cd freetv
+cp .env.example .env && infra/scripts/gen-secret.sh --write   # required: sets PROXY_SECRET
+docker compose up -d --build                                   # then open http://localhost
+```
+
+Set `DOMAIN=tv.example.com` in `.env` for automatic HTTPS. Hosting guide: [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ## Development
 
