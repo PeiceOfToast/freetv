@@ -1,0 +1,36 @@
+{
+  "packageId": "app.freetv.tv",
+  "host": "tv.example.com",
+  "name": "FreeTV",
+  "launcherName": "FreeTV",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "themeColor": "#09090b",
+  "themeColorDark": "#09090b",
+  "navigationColor": "#09090b",
+  "navigationColorDark": "#09090b",
+  "navigationDividerColor": "#09090b",
+  "navigationDividerColorDark": "#09090b",
+  "backgroundColor": "#09090b",
+  "enableNotifications": false,
+  "isChromeOSOnly": false,
+  "startUrl": "/tv",
+  "webManifestUrl": "https://tv.example.com/manifest.webmanifest",
+  "iconUrl": "https://tv.example.com/icons/icon-512.png",
+  "splashScreenFadeOutDuration": 300,
+  "fallbackType": "customtabs",
+  "enableSiteSettingsShortcut": false,
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "minSdkVersion": 21,
+  "generatorApp": "bubblewrap-cli",
+  "signingKey": {
+    "path": "./android.keystore",
+    "alias": "android"
+  },
+  "features": {
+    "leanback": {
+      "enabled": true
+    }
+  }
+}

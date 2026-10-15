@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Hosted Tizen web app for Samsung Smart TVs. The package only points at the live site, so the
+  TV always runs the current /tv page. Replace tv.example.com and the tizen:application id and
+  package with values generated for your Tizen Studio account (package must be 10 characters).
+  See docs/TV.md section 4. Verify the hosted-content behaviour on your Tizen version.
+-->
+<widget xmlns="http://www.w3.org/ns/widgets"
+        xmlns:tizen="http://tizen.org/ns/widgets"
+        id="https://tv.example.com/freetv"
+        version="1.0.0"
+        viewmodes="maximized">
+  <tizen:application id="TVFREETV01.FreeTV" package="TVFREETV01" required_version="6.0"/>
+  <content src="https://tv.example.com/tv"/>
+  <icon src="icon.png"/>
+  <name>FreeTV</name>
+  <description>FreeTV: free public TV channels, 10-foot mode.</description>
+  <author href="https://tv.example.com" email="admin@example.com">FreeTV</author>
+  <access origin="*" subdomains="true"/>
+  <feature name="http://tizen.org/feature/screen.size.all"/>
+  <tizen:privilege name="http://tizen.org/privilege/internet"/>
+  <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>
+  <tizen:setting screen-orientation="landscape"
+                 context-menu="disable"
+                 background-support="disable"
+                 encryption="disable"
+                 install-location="auto"
+                 hwkey-event="enable"/>
+</widget>

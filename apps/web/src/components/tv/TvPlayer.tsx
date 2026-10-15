@@ -1,0 +1,141 @@
+// Chrome-less HLS player for the 10-foot UI. Uses hls.js directly (no controls, no hover UI).
+// Tries direct URLs, then relay URLs (or the reverse when preferRelay), advancing on fatal
+// error or an 8 s timeout. Calls onState so the watch overlay can show what is happening.
+import { useEffect, useMemo, useRef, useState } from "react";
+import Hls from "hls.js";
+import type { StreamInfo } from "@/lib/api";
+import { tvSettings } from "./tvSettings";
+
+export interface TvPlayerState {
+  playing: boolean;
+  via: "direct" | "relay" | null;
+  attempt: number;
+  of: number;
+  failed: boolean;
+}
+
+interface Attempt { kind: "direct" | "relay"; url: string }
+
+function planFor(streams: StreamInfo[], preferRelay: boolean, quality: string): Attempt[] {
+  // Preferred quality first (stable), otherwise the API's own order (https, then quality).
+  const ordered = quality === "any"
+    ? streams
+    : [...streams.filter((s) => s.quality === quality), ...streams.filter((s) => s.quality !== quality)];
+  const direct: Attempt[] = ordered.filter((s) => s.url).map((s) => ({ kind: "direct" as const, url: s.url }));
+  const relay: Attempt[] = ordered.filter((s) => s.proxyUrl).map((s) => ({ kind: "relay" as const, url: s.proxyUrl as string }));
+  return preferRelay ? [...relay, ...direct] : [...direct, ...relay];
+}
+
+export function TvPlayer({
+  streams,
+  onState,
+  retryKey = 0,
+}: {
+  streams: StreamInfo[];
+  onState?: (s: TvPlayerState) => void;
+  retryKey?: number;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const hlsRef = useRef<Hls | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [via, setVia] = useState<"direct" | "relay" | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const { preferRelay, preferredQuality } = tvSettings.get();
+  const plan = useMemo(() => planFor(streams, preferRelay, preferredQuality), [streams, preferRelay, preferredQuality]);
+  const planKey = plan.map((p) => p.url).join("|");
+
+  // Reset the attempt counter whenever the channel or retry request changes.
+  useEffect(() => {
+    setAttempt(0);
+    setFailed(false);
+    setVia(null);
+  }, [planKey, retryKey]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    const a = plan[attempt];
+    if (!video) return;
+    if (!a) {
+      setFailed(true);
+      return;
+    }
+    let dead = false;
+    let parsed = false;
+    let timer: number | undefined;
+
+    const teardown = () => {
+      if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
+      if (video.getAttribute("src")) { video.removeAttribute("src"); video.load(); }
+    };
+    const fail = () => {
+      if (dead) return;
+      dead = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+      teardown();
+      setAttempt((n) => n + 1);
+    };
+    const ok = () => {
+      if (dead || parsed) return;
+      parsed = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+      setVia(a.kind);
+      const p = video.play();
+      if (p && typeof p.catch === "function") {
+        p.catch(() => {
+          // Autoplay blocked: mute and retry (TV browsers usually allow muted playback).
+          video.muted = true;
+          video.play().catch(() => undefined);
+        });
+      }
+    };
+
+    timer = window.setTimeout(() => { if (!parsed) fail(); }, 8000);
+
+    if (Hls.isSupported()) {
+      const hls = new Hls({ enableWorker: false, maxBufferLength: 20, lowLatencyMode: false });
+      hlsRef.current = hls;
+      hls.on(Hls.Events.MANIFEST_PARSED, ok);
+      hls.on(Hls.Events.ERROR, (_e, data) => { if (data.fatal) fail(); });
+      hls.loadSource(a.url);
+      hls.attachMedia(video);
+    } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      video.addEventListener("loadedmetadata", ok);
+      video.addEventListener("error", fail);
+      video.src = a.url;
+    } else {
+      fail();
+    }
+
+    return () => {
+      dead = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+      video.removeEventListener("loadedmetadata", ok);
+      video.removeEventListener("error", fail);
+      teardown();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planKey, attempt, retryKey]);
+
+  useEffect(() => {
+    onState?.({ playing, via, attempt, of: plan.length, failed });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing, via, attempt, plan.length, failed]);
+
+  return (
+    <video
+      ref={videoRef}
+      className="absolute inset-0 h-full w-full bg-black object-contain"
+      playsInline
+      autoPlay
+      muted={false}
+      onPlay={() => setPlaying(true)}
+      onPlaying={() => setPlaying(true)}
+      onPause={() => setPlaying(false)}
+      onWaiting={() => setPlaying(false)}
+    />
+  );
+}
+
+export default TvPlayer;

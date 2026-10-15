@@ -1,0 +1,5 @@
+# Android TV (TWA) verification: the Caddyfile already serves /.well-known/assetlinks.json
+# from /etc/caddy/assetlinks.json (infra/caddy/ is bind-mounted there). Just copy
+# apps/tv/android-tv/assetlinks.example.json to infra/caddy/assetlinks.json, replace the
+# package id and SHA-256 fingerprint, and `docker compose exec web caddy reload --config /etc/caddy/Caddyfile`.
+# No Caddyfile edit is needed. (infra/caddy/assetlinks.json is gitignored.)

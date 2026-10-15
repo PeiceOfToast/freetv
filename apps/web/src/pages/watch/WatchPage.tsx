@@ -4,6 +4,9 @@ import { api, ApiError, type ChannelDetail, type Programme, type StreamInfo } fr
 import { favorites, useIsFavorite } from "@/lib/favorites";
 import { fmtTime, nowTs, progress } from "@/lib/format";
 import { Player } from "@/components/player/Player";
+import { CastButton } from "@/components/cast/CastButton";
+import { CastBar } from "@/components/cast/CastBar";
+import { AirPlayButton } from "@/components/cast/AirPlayButton";
 import { Schedule } from "./Schedule";
 
 type LoadState =
@@ -131,6 +134,7 @@ export default function WatchPage() {
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="min-w-0 lg:col-span-2">
           <Player key={ch.id} streams={ch.streams} />
+          <CastBar />
         </div>
 
         <aside className="min-w-0 space-y-4">
@@ -165,6 +169,8 @@ export default function WatchPage() {
             >
               {copied ? "Link copied" : "Share"}
             </button>
+            <CastButton channel={ch} />
+            <AirPlayButton channelId={ch.id} />
           </div>
 
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">

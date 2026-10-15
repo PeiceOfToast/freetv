@@ -2,8 +2,18 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root { color-scheme: light dark; }
-html { scroll-behavior: smooth; }
-body { @apply bg-zinc-50 text-zinc-900 antialiased; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+body { @apply bg-zinc-50 text-zinc-900 antialiased; -webkit-tap-highlight-color: transparent; }
 .dark body { @apply bg-zinc-950 text-zinc-100; }
 /* subtle scrollbars */
 * { scrollbar-width: thin; scrollbar-color: rgb(113 113 122 / .5) transparent; }
+/* No 300 ms tap delay or double-tap zoom on controls. The player handles its own double-tap. */
+button, a, select, label, [role="button"], video { touch-action: manipulation; }
+
+/* Touch devices: every control gets a 44px hit area without changing the desktop look. */
+@media (pointer: coarse) {
+  button, [role="button"], select, a.btn, input[type="checkbox"], input[type="radio"] {
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+  }
+}

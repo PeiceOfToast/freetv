@@ -21,6 +21,14 @@ docker compose up -d --build                                   # then open http:
 
 Set `DOMAIN=tv.example.com` in `.env` for automatic HTTPS. Hosting guide: [docs/DEPLOY.md](docs/DEPLOY.md).
 
+## Phones and TVs
+
+FreeTV installs to a phone's home screen and runs in the TV's browser at `/tv`. It can also be
+cast or AirPlayed, packaged for Android TV, Tizen and webOS, or used as a playlist source for TV apps.
+
+- [Phones: install and use FreeTV as an app](docs/MOBILE.md)
+- [TVs: casting, TV browsers, packaged apps, and playlist export](docs/TV.md)
+
 ## Development
 
 ```

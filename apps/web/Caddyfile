@@ -45,6 +45,27 @@
 		file_server
 	}
 
+	# Android TV app (Trusted Web Activity) verification. Drop your assetlinks.json into
+	# infra/caddy/ (see apps/tv/README.md); 404 until then.
+	handle /.well-known/assetlinks.json {
+		root * /etc/caddy
+		rewrite * /assetlinks.json
+		header Content-Type application/json
+		header Cache-Control "public, max-age=3600"
+		file_server
+	}
+
+	# PWA manifest / service worker: never cache the SW, correct manifest type.
+	handle /sw.js {
+		header Cache-Control "no-cache"
+		file_server
+	}
+	handle /manifest.webmanifest {
+		header Content-Type application/manifest+json
+		header Cache-Control "no-cache"
+		file_server
+	}
+
 	# Everything else: static files, then the SPA fallback. index.html and deep links must
 	# never be cached so a redeploy is picked up immediately.
 	handle {

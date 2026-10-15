@@ -8,3 +8,4 @@ data/
 *.log
 .data/
 *.tsbuildinfo
+infra/caddy/assetlinks.json

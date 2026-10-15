@@ -1,0 +1,12 @@
+{
+  "id": "app.freetv.tv",
+  "version": "1.0.0",
+  "vendor": "FreeTV",
+  "type": "web",
+  "main": "index.html",
+  "title": "FreeTV",
+  "icon": "icon.png",
+  "largeIcon": "icon-large.png",
+  "bgColor": "#09090b",
+  "resolution": "1920x1080"
+}
