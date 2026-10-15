@@ -84,3 +84,15 @@ Each track owns a directory and must not edit files outside it (see `docs/PARALL
 - Open 80/443 in the VCN security list **and** in the instance's iptables (Oracle images ship a restrictive ruleset).
 - `infra/deploy/oracle/cloud-init.yaml` installs Docker, clones the repo, writes `.env`, starts compose.
 - Point an A record at the public IP; set `DOMAIN=tv.example.com`; Caddy gets a Let's Encrypt cert.
+
+## Status (2026-10-15)
+
+Milestones 0–6 are implemented and integrated. Verified in the build sandbox: api unit/route/EPG tests
+(77), proxy tests (40), real ingest of the live iptv-org catalog (31,570 channels / 15,947 streams),
+XMLTV import + now/next + guide grid, signed proxy URLs round-tripping api → proxy, web build, and
+screenshots of every page at desktop and phone widths. Not yet verified (no registry access in the
+sandbox): the four Docker image builds, a real EPG grab against guide sites, and actual playback of
+third-party streams. CI (`.github/workflows/ci.yml`) builds the images on first push.
+
+Open items worth doing next: a stream health prober (schema already has `streams.status`), server-side
+favorites export/import, i18n, and a "channel numbers" mode for the guide.
