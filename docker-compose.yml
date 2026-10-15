@@ -42,6 +42,7 @@ services:
       PROXY_SECRET: ${PROXY_SECRET:?Set PROXY_SECRET in .env (run infra/scripts/gen-secret.sh)}
       PROXY_PUBLIC_PATH: ${PROXY_PUBLIC_PATH:-/proxy}
       ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      PUBLIC_URL: ${PUBLIC_URL:-}
       EPG_FILE: /data/epg/guide.xml
     volumes:
       - data:/data

@@ -27,6 +27,7 @@ All images are multi-arch (amd64 + arm64) because the reference host is an ARM V
 | `PROXY_SECRET` | *(required)* | api, proxy | Shared HMAC key. `openssl rand -hex 32`. |
 | `PROXY_PUBLIC_PATH` | `/proxy` | api, proxy | Public path prefix the browser uses to reach the proxy. |
 | `PROXY_MAX_CONCURRENT` | `200` | proxy | Upstream connection cap. |
+| `PUBLIC_URL` | *(empty)* | api | Public base URL (`https://tv.example.com`) for absolute URLs in M3U exports and Cast; derived from the request when empty. |
 | `ADMIN_TOKEN` | *(empty)* | api | If set, `POST /api/admin/ingest` with `Authorization: Bearer` forces a re-ingest. |
 | `EPG_FILE` | `/data/epg/guide.xml` | api, epg | XMLTV path. api polls its mtime every 60 s and re-imports on change. |
 | `EPG_SITES` | `all` | epg | `all` or comma list of iptv-org/epg site names (e.g. `tvguide.com,bbc.co.uk`). |

@@ -22,6 +22,8 @@ export const config = {
   proxySecret: /^change-me/i.test(process.env.PROXY_SECRET ?? "") ? "" : (process.env.PROXY_SECRET ?? ""),
   proxyPublicPath: (process.env.PROXY_PUBLIC_PATH ?? "/proxy").replace(/\/$/, ""),
   adminToken: process.env.ADMIN_TOKEN ?? "",
+  /** Public base URL of this instance (e.g. https://tv.example.com); used to build absolute URLs in exports. Empty = derive from request. */
+  publicUrl: (process.env.PUBLIC_URL ?? "").replace(/\/$/, ""),
   epgFile: process.env.EPG_FILE ?? path.join(process.env.DATA_DIR ?? "/data", "epg", "guide.xml"),
   epgPollSeconds: num(process.env.EPG_POLL_SECONDS, 60),
   version: process.env.APP_VERSION ?? "0.1.0",

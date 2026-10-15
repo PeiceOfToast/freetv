@@ -103,6 +103,24 @@ Up to 100 ids, window ≤ 24 h. `{ "from": 0, "to": 0, "channels": { "a": [Progr
 Resolve a single stream (used when the UI wants a fresh signed URL):
 `{ "url": "...", "proxyUrl": "/proxy/...", "userAgent": null, "referrer": null }`.
 
+## Exports (for Kodi, TiviMate, Plex, VLC, Jellyfin…)
+
+### `GET /api/playlist.m3u`
+Same filters as `/api/channels` (`q`, `category`, `country`, `language`, `quality`, `nsfw`, `favorites`, `online`; `hasStream` is forced true; no paging — returns everything matching, capped at 20,000 channels).
+Extra params: `proxy=true` emits relayed (absolute) URLs instead of origin URLs; `streams=all|best` (default `best` = first stream per channel).
+Content-Type `audio/x-mpegurl`, `Content-Disposition: attachment; filename="freetv.m3u"`. Format:
+```
+#EXTM3U x-tvg-url="https://tv.example.com/api/guide.xml"
+#EXTINF:-1 tvg-id="BBCNews.uk" tvg-name="BBC News" tvg-logo="https://…png" tvg-country="UK" tvg-language="English" group-title="News",BBC News
+#EXTVLCOPT:http-user-agent=…        (only when the stream has one)
+#EXTVLCOPT:http-referrer=…          (only when the stream has one)
+https://…/master.m3u8
+```
+Absolute URLs use `PUBLIC_URL` when set, else the request's `X-Forwarded-Proto`/`Host`.
+
+### `GET /api/guide.xml`
+Streams the current XMLTV file (`EPG_FILE`) as `application/xml`; supports `If-Modified-Since`/`Last-Modified` and gzip when the client accepts it. 404 if no guide exists yet.
+
 ## `POST /api/admin/ingest`  (header `Authorization: Bearer $ADMIN_TOKEN`)
 Triggers a re-ingest in the background. `202 { "started": true }`.
 

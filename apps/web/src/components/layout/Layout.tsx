@@ -17,6 +17,7 @@ export function Layout() {
             <NavLink to="/" end className={link}>Channels</NavLink>
             <NavLink to="/guide" className={link}>Guide</NavLink>
             <NavLink to="/about" className={link}>About</NavLink>
+            <NavLink to="/tv" className={link + " hidden sm:inline-block"} title="10-foot mode for TVs">TV mode</NavLink>
           </nav>
           <div className="ml-auto flex items-center gap-2">
             <select aria-label="Theme" value={theme} onChange={(e) => setTheme(e.target.value as typeof theme)}

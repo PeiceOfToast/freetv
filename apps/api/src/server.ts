@@ -5,6 +5,7 @@ import { openDb, getDb } from "./db/index.js";
 import { catalogRoutes } from "./routes/catalog.js";
 import { streamRoutes } from "./routes/stream.js";
 import { epgRoutes } from "./routes/epg.js";
+import { exportRoutes } from "./routes/export.js";
 import { scheduleIngest, runIngest } from "./ingest/index.js";
 import { startEpgWatcher, importEpg } from "./epg/importer.js";
 
@@ -35,6 +36,7 @@ export async function buildServer() {
   await app.register(catalogRoutes);
   await app.register(streamRoutes);
   await app.register(epgRoutes);
+  await app.register(exportRoutes);
   return app;
 }
 
