@@ -22,10 +22,11 @@ interface ListRow {
   online_count: number;
   guide_count: number;
   probed: number;
+  number: number | null;
 }
 
 const LIST_COLUMNS = `c.id, c.name, c.country, co.name AS country_name, co.flag AS flag, c.categories, c.languages,
-  c.network, c.is_nsfw, c.logo_url, c.stream_count, c.best_quality, c.online_count, c.guide_count,
+  c.network, c.is_nsfw, c.logo_url, c.stream_count, c.best_quality, c.online_count, c.guide_count, c.number,
   EXISTS(SELECT 1 FROM streams s WHERE s.channel = c.id AND s.status IS NOT NULL) AS probed`;
 
 /** online: true if a stream passed its last check, false if probed but none online, null if never probed. */
@@ -141,6 +142,7 @@ export async function catalogRoutes(app: FastifyInstance) {
     const items = rows.map((r) => {
       const base = {
         id: r.id,
+        number: r.number,
         name: r.name,
         country: r.country,
         countryName: r.country_name,
@@ -170,7 +172,7 @@ export async function catalogRoutes(app: FastifyInstance) {
       db,
       `SELECT c.id, c.name, c.alt_names, c.network, c.owners, c.country, co.name AS country_name, co.flag AS flag,
               c.categories, c.languages, c.broadcast_area, c.is_nsfw, c.launched, c.closed, c.replaced_by,
-              c.website, c.logo_url
+              c.website, c.logo_url, c.number
        FROM channels c LEFT JOIN countries co ON co.code = c.country WHERE c.id = ? AND c.blocked = 0`,
     ).get(id) as
       | {
@@ -191,6 +193,7 @@ export async function catalogRoutes(app: FastifyInstance) {
           replaced_by: string | null;
           website: string | null;
           logo_url: string | null;
+          number: number | null;
         }
       | undefined;
     if (!ch) throw new HttpError(404, "channel not found");
@@ -280,6 +283,7 @@ export async function catalogRoutes(app: FastifyInstance) {
       replacedBy: ch.replaced_by,
       website: ch.website,
       logo: ch.logo_url,
+      number: ch.number,
       streams,
       guides,
       now: cur ? nowShape(cur) : null,

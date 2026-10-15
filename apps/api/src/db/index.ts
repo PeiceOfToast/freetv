@@ -6,7 +6,7 @@ import { config } from "../config.js";
 
 export type Db = Database.Database;
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 let db: Db | null = null;
 
 function schemaPath() {
@@ -23,14 +23,17 @@ export function openDb(dbPath = config.dbPath): Db {
   db.pragma("synchronous = NORMAL");
   db.pragma("foreign_keys = OFF");
   const schema = fs.readFileSync(schemaPath(), "utf8");
-  db.exec(schema);
-  // Tiny migration scheme: bump SCHEMA_VERSION when a table definition changes; the catalog tables
-  // are rebuilt by the next ingest anyway, so we just drop them and re-create. `programmes` and
-  // `meta` are preserved.
+  // Tiny migration scheme: bump SCHEMA_VERSION when a catalog table definition changes. The catalog
+  // tables are rebuilt by the next ingest anyway, so on a mismatch we drop them BEFORE applying the
+  // schema (an index on a new column would otherwise fail against the old table). `meta`,
+  // `programmes`, `channel_numbers` and `stream_health` are preserved.
+  db.exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
   const have = (db.prepare("SELECT value FROM meta WHERE key='schema_version'").get() as { value: string } | undefined)?.value;
   if (have !== String(SCHEMA_VERSION)) {
     db.exec("DROP TABLE IF EXISTS channels_fts; DROP TABLE IF EXISTS channels; DROP TABLE IF EXISTS streams; DROP TABLE IF EXISTS feeds; DROP TABLE IF EXISTS guides; DROP TABLE IF EXISTS channel_categories; DROP TABLE IF EXISTS channel_languages; DROP TABLE IF EXISTS categories; DROP TABLE IF EXISTS countries; DROP TABLE IF EXISTS languages;");
-    db.exec(schema);
+  }
+  db.exec(schema);
+  if (have !== String(SCHEMA_VERSION)) {
     db.prepare("INSERT INTO meta(key,value) VALUES('schema_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(String(SCHEMA_VERSION));
   }
   return db;

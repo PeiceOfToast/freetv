@@ -56,8 +56,10 @@ CREATE TABLE IF NOT EXISTS channels (
   quality_rank   INTEGER NOT NULL DEFAULT 0, -- 0 unknown, 1 sd(<720), 2 720p, 3 1080p, 4 2160p+
   online_count   INTEGER NOT NULL DEFAULT 0, -- streams whose last probe was online
   guide_count    INTEGER NOT NULL DEFAULT 0,
+  number         INTEGER,                    -- stable per-instance channel number (from channel_numbers)
   name_sort      TEXT NOT NULL               -- lowercase, diacritics stripped
 );
+CREATE INDEX IF NOT EXISTS idx_channels_number ON channels(number);
 CREATE INDEX IF NOT EXISTS idx_channels_country  ON channels(country);
 CREATE INDEX IF NOT EXISTS idx_channels_sort     ON channels(name_sort);
 CREATE INDEX IF NOT EXISTS idx_channels_stream   ON channels(has_stream, blocked, is_nsfw);
@@ -106,8 +108,29 @@ CREATE INDEX IF NOT EXISTS idx_guides_channel ON guides(channel);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS channels_fts USING fts5(
   id,
-  name, alt_names, network, owners, country_name,
+  name, alt_names, network, owners, country_name, language_names,
   tokenize = 'unicode61 remove_diacritics 2'
+);
+
+-- Stable channel numbers for this instance. Survives ingest (never deleted); a channel keeps its
+-- number forever, new channels with streams get the next free number at ingest time.
+CREATE TABLE IF NOT EXISTS channel_numbers (
+  channel TEXT PRIMARY KEY,
+  number  INTEGER NOT NULL UNIQUE
+);
+
+-- Stream health history (owned by the prober; ingest never touches this table). Keyed by URL so it
+-- survives catalog rebuilds; the prober copies status/last_checked back onto `streams` rows.
+CREATE TABLE IF NOT EXISTS stream_health (
+  url          TEXT PRIMARY KEY,
+  status       TEXT NOT NULL,               -- 'online' | 'offline'
+  http_status  INTEGER,
+  latency_ms   INTEGER,
+  fail_count   INTEGER NOT NULL DEFAULT 0,  -- consecutive failures
+  ok_count     INTEGER NOT NULL DEFAULT 0,  -- consecutive successes
+  last_checked INTEGER NOT NULL,
+  last_online  INTEGER,
+  error        TEXT
 );
 
 -- EPG (owned by the XMLTV importer; ingest never touches this table)

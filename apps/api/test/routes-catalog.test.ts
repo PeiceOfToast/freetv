@@ -126,7 +126,7 @@ describe("catalog routes", () => {
       assert.ok(item, "BBCNews.uk found");
       assert.deepEqual(Object.keys(item).sort(), [
         "bestQuality", "categories", "country", "countryName", "flag", "hasGuide", "id", "isNsfw", "languages",
-        "logo", "name", "network", "online", "streamCount",
+        "logo", "name", "network", "number", "online", "streamCount",
       ]);
       assert.equal(item.country, "UK");
       assert.equal(item.countryName, "United Kingdom");

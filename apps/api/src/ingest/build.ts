@@ -210,6 +210,7 @@ interface Plan {
   countryCounts: Map<string, Tally>;
   languageCounts: Map<string, Tally>;
   countryName: Map<string, string>;
+  languageName: Map<string, string>;
   streamsSkipped: number;
 }
 
@@ -217,6 +218,8 @@ interface Plan {
 export function derive(raw: RawDatasets): Plan {
   const countryName = new Map<string, string>();
   for (const c of raw.countries) countryName.set(c.code, c.name);
+  const languageName = new Map<string, string>();
+  for (const l of raw.languages) languageName.set(l.code, l.name);
 
   // Channels: first occurrence wins.
   const channels = new Map<string, RawChannel>();
@@ -366,6 +369,7 @@ export function derive(raw: RawDatasets): Plan {
     countryCounts,
     languageCounts,
     countryName,
+    languageName,
     streamsSkipped,
   };
 }
@@ -412,12 +416,13 @@ export function buildCatalog(db: Db, rawDir: string, now = Math.floor(Date.now()
     }
 
     const insFts = db.prepare(
-      "INSERT INTO channels_fts (id, name, alt_names, network, owners, country_name) VALUES (?, ?, ?, ?, ?, ?)",
+      "INSERT INTO channels_fts (id, name, alt_names, network, owners, country_name, language_names) VALUES (?, ?, ?, ?, ?, ?, ?)",
     );
     for (const c of plan.channels) {
       insFts.run(
         c.id, c.name, c.alt_names.join(" "), c.network ?? "", c.owners.join(" "),
         (c.country && plan.countryName.get(c.country)) || "",
+        c.languages.map((l) => plan.languageName.get(l) ?? "").filter(Boolean).join(" "),
       );
     }
 
@@ -477,6 +482,23 @@ export function buildCatalog(db: Db, rawDir: string, now = Math.floor(Date.now()
       "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
     );
     const channelsWithStreams = plan.channels.filter((c) => c.has_stream).length;
+    // Stable channel numbers: keep existing, assign the next free number to new channels with streams
+    // (alphabetical within the batch so first-run numbering is predictable).
+    const maxNum = (db.prepare("SELECT COALESCE(MAX(number), 0) AS m FROM channel_numbers").get() as { m: number }).m;
+    const unnumbered = db.prepare(
+      "SELECT id FROM channels WHERE has_stream = 1 AND blocked = 0 AND id NOT IN (SELECT channel FROM channel_numbers) ORDER BY name_sort, id",
+    ).all() as { id: string }[];
+    const insNum = db.prepare("INSERT INTO channel_numbers (channel, number) VALUES (?, ?)");
+    let n = maxNum;
+    for (const row of unnumbered) insNum.run(row.id, ++n);
+    db.prepare("UPDATE channels SET number = (SELECT number FROM channel_numbers cn WHERE cn.channel = channels.id)").run();
+
+    // Re-apply stream health from the prober's URL-keyed history onto the rebuilt streams rows.
+    db.prepare(
+      "UPDATE streams SET status = (SELECT h.status FROM stream_health h WHERE h.url = streams.url), last_checked = (SELECT h.last_checked FROM stream_health h WHERE h.url = streams.url) WHERE url IN (SELECT url FROM stream_health)",
+    ).run();
+    db.prepare("UPDATE channels SET online_count = (SELECT COUNT(*) FROM streams s WHERE s.channel = channels.id AND s.status = 'online')").run();
+
     insMeta.run("last_ingest", String(now));
     insMeta.run(
       "counts",

@@ -33,3 +33,8 @@ export const nowShape = (p: ProgrammeRow) => ({
 });
 
 export const nextShape = (p: ProgrammeRow) => ({ title: p.title, start: p.start_ts, stop: p.stop_ts });
+
+/** Browsers cannot send a custom User-Agent/Referer, so such streams only work through the relay. */
+export function relayOnlyOf(userAgent: string | null, referrer: string | null): boolean {
+  return Boolean(userAgent || referrer);
+}

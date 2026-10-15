@@ -28,6 +28,18 @@ All images are multi-arch (amd64 + arm64) because the reference host is an ARM V
 | `PROXY_PUBLIC_PATH` | `/proxy` | api, proxy | Public path prefix the browser uses to reach the proxy. |
 | `PROXY_MAX_CONCURRENT` | `200` | proxy | Upstream connection cap. |
 | `PUBLIC_URL` | *(empty)* | api | Public base URL (`https://tv.example.com`) for absolute URLs in M3U exports and Cast; derived from the request when empty. |
+| `PROBE_ENABLED` | `true` | api | Run the stream health prober. |
+| `PROBE_INTERVAL_HOURS` | `6` | api | Time to cycle through every stream once. |
+| `PROBE_CONCURRENCY` | `8` | api | Parallel probes. |
+| `PROBE_RATE_PER_SECOND` | `5` | api | Global probe rate cap (be polite to stream hosts). |
+| `PROBE_TIMEOUT_MS` | `10000` | api | Per-probe timeout. |
+| `LOGO_CACHE_ENABLED` | `true` | api | Serve logos from `/logo/:id` with a disk cache. |
+| `LOGO_CACHE_DIR` | `$DATA_DIR/logos` | api | Cache location. |
+| `LOGO_CACHE_MAX_MB` | `500` | api | LRU eviction threshold. |
+| `LOGO_MAX_SIZE` | `512` | api | Largest edge served. |
+| `PROXY_RATE_LIMIT_RPS` | `20` | proxy | Per-client-IP sustained requests/second (segments are ~1 req/2–6 s per viewer; 20 allows several tabs). |
+| `PROXY_RATE_LIMIT_BURST` | `60` | proxy | Burst allowance. |
+| `PROXY_TRUST_PROXY` | `true` | proxy | Use `X-Forwarded-For` (set by Caddy) for the client IP. |
 | `LOCAL_BLOCKLIST` | `$DATA_DIR/local-blocklist.json` | api | Optional JSON array of channel ids (or `{channel}` objects) this instance should hide in addition to iptv-org's blocklist. |
 | `ADMIN_TOKEN` | *(empty)* | api | If set, `POST /api/admin/ingest` with `Authorization: Bearer` forces a re-ingest. |
 | `EPG_FILE` | `/data/epg/guide.xml` | api, epg | XMLTV path. api polls its mtime every 60 s and re-imports on change. |

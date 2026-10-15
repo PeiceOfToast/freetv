@@ -4,7 +4,7 @@ export interface ProgrammeBrief { title: string; start: number; stop: number; de
 export interface Programme extends ProgrammeBrief { description: string | null; category: string | null; icon: string | null }
 
 export interface ChannelSummary {
-  id: string; name: string; country: string | null; countryName: string | null; flag: string | null;
+  id: string; number: number | null; name: string; country: string | null; countryName: string | null; flag: string | null;
   categories: string[]; languages: string[]; network: string | null; isNsfw: boolean;
   logo: string | null; streamCount: number; bestQuality: string | null; online: boolean | null; hasGuide: boolean;
   now?: ProgrammeBrief | null;
@@ -12,7 +12,7 @@ export interface ChannelSummary {
 
 export interface StreamInfo {
   index: number; url: string; title: string | null; quality: string | null; labels: string[]; feed: string | null;
-  userAgent: string | null; referrer: string | null; online: boolean | null; lastChecked: number | null; proxyUrl?: string;
+  userAgent: string | null; referrer: string | null; online: boolean | null; lastChecked: number | null; relayOnly: boolean; proxyUrl?: string;
 }
 
 export interface ChannelDetail {
@@ -20,7 +20,7 @@ export interface ChannelDetail {
   country: string | null; countryName: string | null; flag: string | null;
   categories: { id: string; name: string }[]; languages: { code: string; name: string }[];
   broadcastArea: string[]; isNsfw: boolean; launched: string | null; closed: string | null; replacedBy: string | null;
-  website: string | null; logo: string | null; streams: StreamInfo[];
+  website: string | null; logo: string | null; number: number | null; streams: StreamInfo[];
   guides: { site: string; siteId: string; lang: string | null }[];
   now: Programme | null; next: Programme | null;
 }
@@ -31,6 +31,7 @@ export interface Language { code: string; name: string; channelCount: number }
 export interface Meta {
   channels: number; streams: number; channelsWithStreams: number; lastIngest: number | null; lastEpgImport: number | null;
   programmes: number; proxyEnabled: boolean; hideNsfwDefault: boolean; version: string;
+  health?: { probed: number; online: number; lastProbe: number | null };
 }
 export interface Paged<T> { total: number; page: number; limit: number; items: T[] }
 

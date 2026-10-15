@@ -26,6 +26,17 @@ export const config = {
   publicUrl: (process.env.PUBLIC_URL ?? "").replace(/\/$/, ""),
   epgFile: process.env.EPG_FILE ?? path.join(process.env.DATA_DIR ?? "/data", "epg", "guide.xml"),
   epgPollSeconds: num(process.env.EPG_POLL_SECONDS, 60),
+  // Stream health prober (TRACK P)
+  probeEnabled: bool(process.env.PROBE_ENABLED, true),
+  probeIntervalHours: num(process.env.PROBE_INTERVAL_HOURS, 6),
+  probeConcurrency: num(process.env.PROBE_CONCURRENCY, 8),
+  probeTimeoutMs: num(process.env.PROBE_TIMEOUT_MS, 10000),
+  probeRatePerSecond: num(process.env.PROBE_RATE_PER_SECOND, 5),
+  // Logo cache (TRACK L)
+  logoCacheEnabled: bool(process.env.LOGO_CACHE_ENABLED, true),
+  logoCacheDir: process.env.LOGO_CACHE_DIR ?? path.join(process.env.DATA_DIR ?? "/data", "logos"),
+  logoCacheMaxMb: num(process.env.LOGO_CACHE_MAX_MB, 500),
+  logoMaxSize: num(process.env.LOGO_MAX_SIZE, 512),
   version: process.env.APP_VERSION ?? "0.1.0",
   logLevel: process.env.LOG_LEVEL ?? "info",
 };
