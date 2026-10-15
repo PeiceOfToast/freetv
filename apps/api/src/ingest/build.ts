@@ -134,6 +134,17 @@ export function readDatasets(rawDir: string): RawDatasets {
 
 const feedKey = (channel: string, feed: string) => `${channel}\u0000${feed}`;
 
+export function readLocalBlocklist(file = process.env.LOCAL_BLOCKLIST ?? path.join(process.env.DATA_DIR ?? "/data", "local-blocklist.json")): string[] {
+  try {
+    if (!fs.existsSync(file)) return [];
+    const v = JSON.parse(fs.readFileSync(file, "utf8")) as unknown;
+    if (!Array.isArray(v)) return [];
+    return v.map((x) => (typeof x === "string" ? x : (x as { channel?: string })?.channel)).filter((x): x is string => typeof x === "string" && x.length > 0);
+  } catch {
+    return [];
+  }
+}
+
 /** lowercase, diacritics stripped: used for name ordering. */
 export function nameSort(name: string): string {
   return name.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
@@ -212,6 +223,10 @@ export function derive(raw: RawDatasets): Plan {
   for (const c of raw.channels) if (!channels.has(c.id)) channels.set(c.id, c);
 
   const blocked = new Set(raw.blocklist.map((b) => b.channel));
+  // Operator's own blocklist: LOCAL_BLOCKLIST (default $DATA_DIR/local-blocklist.json), a JSON array
+  // of channel ids or of {channel, reason} objects. Lets an instance drop a channel immediately
+  // without waiting for upstream.
+  for (const id of readLocalBlocklist()) blocked.add(id);
 
   // Feeds for known channels, deduplicated by (channel, id).
   const feeds: RawFeed[] = [];

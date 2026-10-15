@@ -111,7 +111,7 @@ GUIDES_FILE=/path/to/guides.json EPG_SITES=tvguide.com node run.mjs
 - **Overlapping schedules across sites.** `guides.json` maps about 5,300 channel ids to more than one
   site. For example, `BBCNews.uk` is on 68 sites. The grabber writes all of them under the same
   `channel` id, and the `api` importer has no unique key on programmes, so duplicate, overlapping rows
-  are stored. See `NOTES.md`.
+  are stored. See `docs/notes/epg-container.md`.
 - **Blocked hosts.** Some sites are unreachable from restricted networks. The grabber logs `403` for each
   request and still exits 0, so the run is kept as "no programmes" and the previous guide stays in place.
   Find out which site is failing with `EPG_SPLIT_BY_SITE=true`.

@@ -38,4 +38,4 @@ docker build -t freetv-proxy apps/proxy
 
 Only `http(s)` targets are fetched. Literal IPs and resolved hostnames in loopback, private, link-local,
 CGNAT, multicast, unique-local, NAT64 and IPv4-mapped ranges are refused with `403`. This is checked on
-every redirect hop, and again at connect time to close the DNS-rebinding gap. See `NOTES.md`.
+every redirect hop, and again at connect time to close the DNS-rebinding gap. See `docs/notes/proxy.md`.

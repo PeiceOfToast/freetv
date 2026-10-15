@@ -4,9 +4,9 @@ The repo is split so that several people/agents can build at once without merge 
 Rules:
 
 1. **Own your directory.** Each track edits only the paths listed below. If you need something
-   outside, write it in your track's `NOTES.md` and the integrator will do it.
+   outside, write it in `docs/notes/<track>.md` and the integrator will do it.
 2. **The contracts are frozen** during a sprint: `docs/API.md`, `apps/api/src/db/schema.sql`,
-   `docs/ARCHITECTURE.md` (env vars). Propose changes in `NOTES.md`; don't edit them.
+   `docs/ARCHITECTURE.md` (env vars). Propose changes in your notes file; don't edit them.
 3. **Everything must build offline** from this sandbox: network access to iptv-org is not
    guaranteed at dev time. Sample data lives in `apps/api/test/fixtures/` (small slices of the real JSON).
 4. **No shared packages.** Copy the 10-line signing helper; don't create a workspace package.

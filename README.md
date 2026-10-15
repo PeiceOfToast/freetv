@@ -8,8 +8,9 @@ Clean browse/search UI, categories, countries, languages, favorites, and a TV gu
 - **Remix freely:** MIT licensed. Fork it, brand it, point your own domain at it.
 - **No streams hosted here:** channel and stream lists are pulled from iptv-org on a schedule.
 
-See `docs/PLAN.md` for the project plan, `docs/ARCHITECTURE.md` for how it fits together,
-`docs/API.md` for the HTTP contract and `docs/DEPLOY.md` for hosting (including Oracle Cloud's free tier).
+**Documentation:** [docs/README.md](docs/README.md) is the index. Fastest path to a running site:
+[docs/GETTING-STARTED.md](docs/GETTING-STARTED.md). Hosting on Oracle's free tier: [docs/DEPLOY-ORACLE.md](docs/DEPLOY-ORACLE.md).
+Day-two: [OPERATIONS](docs/OPERATIONS.md) · [TROUBLESHOOTING](docs/TROUBLESHOOTING.md). Hacking: [DEVELOPMENT](docs/DEVELOPMENT.md).
 
 ## Quick start
 
@@ -38,6 +39,9 @@ cd apps/proxy && npm i && npm run dev                      # relay on :3001
 ```
 
 ## Legal
+
+Longer version for operators: [docs/LEGAL.md](docs/LEGAL.md).
+
 
 FreeTV only indexes and (optionally) relays streams that are publicly listed in iptv-org's database.
 Channels in iptv-org's blocklist are excluded and NSFW channels are hidden by default. If you operate

@@ -1,0 +1,30 @@
+# Changelog
+
+All notable changes to FreeTV. Format follows Keep a Changelog; versions follow SemVer.
+
+## [Unreleased]
+
+### Added
+- `LOCAL_BLOCKLIST`: per-instance channel blocklist file merged at ingest.
+
+## [0.1.0] — 2026-10-15
+
+First complete version.
+
+### Added
+- `api`: iptv-org ingest into SQLite/FTS5, catalog API with search/filter/sort, channel detail, signed
+  relay URLs, streaming XMLTV importer, now/next and guide-grid endpoints, M3U + XMLTV exports,
+  admin endpoints behind a token, schema versioning.
+- `web`: browse grid with URL-synced filters, favorites, dark/light, watch page with hls.js player and
+  direct→relay fall-through, timeline guide, about page; installable PWA with offline shell; mobile
+  player behaviour (inline, fullscreen + landscape, PiP, wake lock, Media Session); Chromecast and
+  AirPlay; `/tv` 10-foot mode with D-pad navigation, channel zapping, number entry, on-screen keyboard,
+  cable-style guide and settings; responsive audit across phones, tablets and desktops.
+- `proxy`: HMAC-signed HLS relay with playlist rewriting, Range passthrough, SSRF guard, byte and
+  concurrency caps.
+- `epg`: container around iptv-org/epg with channels.xml generation (one site per channel), scheduled
+  grabs, atomic publish, split-by-site mode.
+- Infra: Docker Compose with profiles, Caddy auto-HTTPS, Oracle Cloud cloud-init and guide, GitHub
+  Actions CI building multi-arch images to GHCR, update/secret scripts.
+- Docs: full packet under `docs/` (getting started, operations, troubleshooting, development,
+  decisions, roadmap, TV, mobile, legal) plus per-track engineering notes.
