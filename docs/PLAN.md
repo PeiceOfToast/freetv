@@ -96,3 +96,15 @@ third-party streams. CI (`.github/workflows/ci.yml`) builds the images on first 
 
 Open items worth doing next: a stream health prober (schema already has `streams.status`), server-side
 favorites export/import, i18n, and a "channel numbers" mode for the guide.
+
+## Round 2 — phones and TVs (2026-10-15)
+
+Added: installable PWA (manifest, icons, service worker that caches the shell and API but never video),
+iOS/Android player behaviour (inline playback, fullscreen + landscape lock, PiP, wake lock, lock-screen
+controls), 44 px touch targets, Chromecast and AirPlay from the watch page, a 10-foot `/tv` mode driven
+by a remote (D-pad, channel up/down, number entry, channel strip, cable-style guide, on-screen keyboard),
+`/api/playlist.m3u` + `/api/guide.xml` exports for TiviMate/Kodi/Plex/Jellyfin/VLC, and packaging
+skeletons plus guides for Android TV/Fire TV (TWA), Samsung Tizen and LG webOS (`apps/tv/`, `docs/TV.md`,
+`docs/MOBILE.md`). Main JS bundle dropped from 276 kB to 68 kB gzipped by lazy-loading the player, guide
+and TV routes. Verified headlessly at 320/390/844 px and 1920×1080 with keyboard-only navigation; not
+yet verified on a real phone, Chromecast or TV.
