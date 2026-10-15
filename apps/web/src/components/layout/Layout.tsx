@@ -10,8 +10,8 @@ export function Layout() {
     <div className="min-h-screen flex flex-col">
       <header className="sticky top-0 z-40 border-b border-zinc-200/80 dark:border-zinc-800/80 bg-zinc-50/90 dark:bg-zinc-950/90 backdrop-blur">
         <div className="mx-auto max-w-screen-2xl px-4 h-14 flex items-center gap-2">
-          <NavLink to="/" className="flex items-center gap-2 font-semibold tracking-tight mr-4">
-            <img src="/favicon.svg" alt="" className="h-7 w-7" /> FreeTV
+          <NavLink to="/" className="flex items-center gap-2 font-semibold tracking-tight mr-2 sm:mr-4">
+            <img src="/favicon.svg" alt="" className="h-7 w-7" /> <span className="hidden sm:inline">FreeTV</span>
           </NavLink>
           <nav className="flex items-center gap-1">
             <NavLink to="/" end className={link}>Channels</NavLink>
@@ -20,7 +20,7 @@ export function Layout() {
           </nav>
           <div className="ml-auto flex items-center gap-2">
             <select aria-label="Theme" value={theme} onChange={(e) => setTheme(e.target.value as typeof theme)}
-              className="text-sm bg-transparent border border-zinc-300 dark:border-zinc-700 rounded-md px-2 py-1">
+              className="text-sm bg-transparent border border-zinc-300 dark:border-zinc-700 rounded-md px-1.5 py-1 max-w-24">
               <option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option>
             </select>
           </div>

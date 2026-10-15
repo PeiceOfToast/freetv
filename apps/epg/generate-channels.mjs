@@ -138,7 +138,36 @@ export function buildEntries(rows, { sites = 'all', excludeSites = [], mainFeeds
     }
   }
 
-  const entries = [...byKey.values()]
+  // EPG_ONE_SITE_PER_CHANNEL (default true): grabbing the same channel from many sites multiplies
+  // requests (BBC News is listed on ~68 sites) and yields overlapping schedules. Keep one site per
+  // channel: prefer a site whose domain matches the channel's country (id suffix), then the main
+  // feed, then the site with the most mapped channels (big aggregators tend to be reliable).
+  let chosen = [...byKey.values()];
+  const onePerChannel = (process.env.EPG_ONE_SITE_PER_CHANNEL ?? 'true').toLowerCase() !== 'false';
+  if (onePerChannel) {
+    const siteSize = new Map();
+    for (const r of chosen) siteSize.set(r.site, (siteSize.get(r.site) || 0) + 1);
+    const countryOf = id => (id.includes('.') ? id.slice(id.lastIndexOf('.') + 1).toLowerCase() : '');
+    const siteMatchesCountry = (site, cc) => {
+      if (!cc) return false;
+      const s = site.toLowerCase();
+      if (s.endsWith(`.${cc}`) || s.includes(`.${cc}.`)) return true;
+      return cc === 'us' && (s.endsWith('.com') || s.endsWith('.net') || s.endsWith('.tv'));
+    };
+    const score = r =>
+      (siteMatchesCountry(r.site, countryOf(r.channel)) ? 1_000_000 : 0) +
+      feedRank(r, mainFeeds) * 100_000 +
+      (siteSize.get(r.site) || 0);
+    const best = new Map();
+    for (const r of chosen) {
+      const cur = best.get(r.channel);
+      if (!cur || score(r) > score(cur)) best.set(r.channel, r);
+    }
+    stats.sitesCollapsed = chosen.length - best.size;
+    chosen = [...best.values()];
+  }
+
+  const entries = chosen
     .map(row => ({
       site: row.site,
       lang: row.lang || 'en',

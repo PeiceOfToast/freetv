@@ -42,18 +42,22 @@ export function Toolbar(p: ToolbarProps) {
         </p>
       </div>
 
-      <Button variant="secondary" size="sm" onClick={p.onOpenFilters} className="lg:hidden" aria-haspopup="dialog">
+      <div className="lg:hidden">
+      <Button variant="secondary" size="sm" onClick={p.onOpenFilters} aria-haspopup="dialog">
         Filters
         {p.filterCount > 0 && (
           <span className="grid h-5 min-w-5 place-items-center rounded-full bg-zinc-900 px-1 text-[11px] text-white dark:bg-zinc-100 dark:text-zinc-900">{p.filterCount}</span>
         )}
       </Button>
-      <Button variant="secondary" size="sm" onClick={p.onToggleSidebar} aria-expanded={p.sidebarOpen} aria-controls="browse-sidebar" className="hidden lg:inline-flex">
+      </div>
+      <div className="hidden lg:block">
+      <Button variant="secondary" size="sm" onClick={p.onToggleSidebar} aria-expanded={p.sidebarOpen} aria-controls="browse-sidebar">
         {p.sidebarOpen ? "Hide filters" : "Show filters"}
         {p.filterCount > 0 && (
           <span className="grid h-5 min-w-5 place-items-center rounded-full bg-zinc-900 px-1 text-[11px] text-white dark:bg-zinc-100 dark:text-zinc-900">{p.filterCount}</span>
         )}
       </Button>
+      </div>
 
       <div className="flex items-center gap-1.5">
         <label htmlFor="browse-sort" className="sr-only">Sort by</label>

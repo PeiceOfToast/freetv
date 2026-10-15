@@ -136,7 +136,7 @@ export default function WatchPage() {
         <aside className="min-w-0 space-y-4">
           <div className="flex items-start gap-3">
             {ch.logo ? (
-              <img src={ch.logo} alt="" referrerPolicy="no-referrer" className="h-16 w-16 shrink-0 rounded bg-white object-contain p-1" />
+              <img src={ch.logo} alt="" referrerPolicy="no-referrer" className="h-16 w-16 shrink-0 rounded bg-white object-contain p-1" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
             ) : (
               <div className="h-16 w-16 shrink-0 rounded bg-zinc-200 dark:bg-zinc-800" />
             )}

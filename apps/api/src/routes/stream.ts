@@ -10,7 +10,7 @@ export async function streamRoutes(app: FastifyInstance) {
   app.get("/api/stream/:id/:index/play", async (req) => {
     const { id, index } = req.params as { id: string; index: string };
     const idx = intParam(index, "index", 0, 0);
-    const row = prep(getDb(), "SELECT url, user_agent, referrer FROM streams WHERE channel = ? AND idx = ?").get(id, idx) as
+    const row = prep(getDb(), "SELECT s.url, s.user_agent, s.referrer FROM streams s JOIN channels c ON c.id = s.channel WHERE s.channel = ? AND s.idx = ? AND c.blocked = 0").get(id, idx) as
       | { url: string; user_agent: string | null; referrer: string | null }
       | undefined;
     if (!row) throw new HttpError(404, "stream not found");

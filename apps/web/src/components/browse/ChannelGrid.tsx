@@ -39,7 +39,7 @@ function SkeletonCard({ view }: { view: "grid" | "list" }) {
 export function ChannelGrid({ items, view, isFavorite, now, busy, skeleton }: ChannelGridProps) {
   if (skeleton) {
     return (
-      <div aria-busy="true" aria-label="Loading channels" className={view === "list" ? "flex flex-col gap-2" : "grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"}>
+      <div aria-busy="true" aria-label="Loading channels" className={view === "list" ? "flex flex-col gap-2" : "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"}>
         {Array.from({ length: Math.min(PAGE_SIZE, 12) }, (_, i) => (
           <SkeletonCard key={i} view={view} />
         ))}
@@ -49,7 +49,7 @@ export function ChannelGrid({ items, view, isFavorite, now, busy, skeleton }: Ch
   const layout =
     view === "list"
       ? "flex flex-col gap-2"
-      : "grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4";
+      : "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6";
   return (
     <ul aria-busy={busy} className={`${layout} transition-opacity ${busy ? "opacity-60" : "opacity-100"}`}>
       {items.map((c) => (

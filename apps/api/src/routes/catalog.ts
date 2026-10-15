@@ -171,7 +171,7 @@ export async function catalogRoutes(app: FastifyInstance) {
       `SELECT c.id, c.name, c.alt_names, c.network, c.owners, c.country, co.name AS country_name, co.flag AS flag,
               c.categories, c.languages, c.broadcast_area, c.is_nsfw, c.launched, c.closed, c.replaced_by,
               c.website, c.logo_url
-       FROM channels c LEFT JOIN countries co ON co.code = c.country WHERE c.id = ?`,
+       FROM channels c LEFT JOIN countries co ON co.code = c.country WHERE c.id = ? AND c.blocked = 0`,
     ).get(id) as
       | {
           id: string;

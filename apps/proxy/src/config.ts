@@ -31,7 +31,7 @@ function bool(name: string, env: NodeJS.ProcessEnv, fallback: boolean): boolean 
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ProxyConfig {
   const secret = env.PROXY_SECRET;
-  if (!secret) throw new Error("PROXY_SECRET is required");
+  if (!secret || /^change-me/i.test(secret)) throw new Error("PROXY_SECRET is required (set a real secret: openssl rand -hex 32)");
   const publicPath = (env.PROXY_PUBLIC_PATH ?? "/proxy").replace(/\/+$/, "");
   return {
     port: int("PORT", env, 3001),

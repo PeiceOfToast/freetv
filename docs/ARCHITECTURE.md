@@ -34,6 +34,11 @@ All images are multi-arch (amd64 + arm64) because the reference host is an ARM V
 | `EPG_MAX_CONNECTIONS` | `10` | epg | Grabber concurrency. |
 | `EPG_INTERVAL_HOURS` | `12` | epg | Time between grabs. |
 | `EPG_RUN_ON_START` | `true` | epg | Grab immediately on container start. |
+| `EPG_ONE_SITE_PER_CHANNEL` | `true` | epg | One guide source per channel (see apps/epg/README.md). |
+| `EPG_EXCLUDE_SITES` | *(empty)* | epg | Sites to drop. |
+| `EPG_POLL_SECONDS` | `60` | api | How often api checks `EPG_FILE` for changes. |
+| `PROXY_MAX_BYTES` | `52428800` | proxy | Per-response byte cap. |
+| `LOG_LEVEL` | `info` | api, proxy | Pino level / `silent`. |
 | `PORT` | 3000 / 3001 | api / proxy | Listen port. |
 | `DATA_DIR` | `/data` | api | Data root. |
 
@@ -67,7 +72,7 @@ All images are multi-arch (amd64 + arm64) because the reference host is an ARM V
 
 - `epg` container: `generate-channels.mjs` reads `guides.json` (from `IPTV_API_BASE`), filters by `EPG_SITES`, and writes `channels.xml` in iptv-org/epg's format:
   `<channel site="SITE" lang="LANG" xmltv_id="CHANNEL_ID" site_id="SITE_ID">NAME</channel>`.
-  One entry per `(channel, site)`; when a channel has several feeds on a site, prefer the one whose feed is the channel's main feed, else the first.
+  By default one entry per channel (`EPG_ONE_SITE_PER_CHANNEL=true`); otherwise one per `(channel, site)`. Within a site, prefer the channel's main feed, else `feed: null`, else the first. The api importer keeps one programme per `(channel, start)` either way.
 - Runs `npm run grab -- --channels=/work/channels.xml --days=$EPG_DAYS --maxConnections=$EPG_MAX_CONNECTIONS --output=/data/epg/guide.xml.tmp` then `mv` to `guide.xml`.
 - `api/epg/importer.ts` polls mtime; on change, streams the XML with a SAX parser into a temp table, then swaps into `programmes` inside one transaction. `programme@channel` may be `ID` or `ID@FEED`; the part before `@` is the channel id.
 - Times are stored as unix seconds UTC (`start_ts`, `stop_ts`). The UI renders in the viewer's local zone.

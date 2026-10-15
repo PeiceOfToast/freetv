@@ -19,7 +19,6 @@ export const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: "country", label: "Country" },
   { value: "streams", label: "Streams" },
   { value: "quality", label: "Quality" },
-  { value: "updated", label: "Recently updated" },
 ];
 
 const SORT_KEYS = new Set<string>(SORT_OPTIONS.map((o) => o.value));

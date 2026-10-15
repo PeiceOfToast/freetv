@@ -80,8 +80,10 @@ async function doImport(opts: { force?: boolean }, log?: Log): Promise<void> {
   const swap = db.transaction(() => {
     db.prepare("DELETE FROM programmes").run();
     db.prepare(
+      // Several guide sites can cover the same channel; keep one programme per (channel, start).
       `INSERT INTO programmes (channel, start_ts, stop_ts, title, description, category, icon)
-       SELECT channel, start_ts, stop_ts, title, description, category, icon FROM ${TEMP_TABLE}`,
+       SELECT channel, start_ts, stop_ts, title, description, category, icon FROM ${TEMP_TABLE}
+       WHERE rowid IN (SELECT MIN(rowid) FROM ${TEMP_TABLE} GROUP BY channel, start_ts)`,
     ).run();
     db.prepare(`DELETE FROM ${TEMP_TABLE}`).run();
     const { n } = db.prepare("SELECT COUNT(*) AS n FROM programmes").get() as { n: number };
@@ -91,6 +93,7 @@ async function doImport(opts: { force?: boolean }, log?: Log): Promise<void> {
     setMeta("epg_file_size", size);
   });
   swap();
+  try { db.pragma("wal_checkpoint(TRUNCATE)"); } catch { /* best effort */ }
 
   log?.info(
     { file, programmes: parsed, ms: Date.now() - t0 },

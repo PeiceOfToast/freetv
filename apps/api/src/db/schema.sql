@@ -105,7 +105,7 @@ CREATE TABLE IF NOT EXISTS guides (
 CREATE INDEX IF NOT EXISTS idx_guides_channel ON guides(channel);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS channels_fts USING fts5(
-  id UNINDEXED,
+  id,
   name, alt_names, network, owners, country_name,
   tokenize = 'unicode61 remove_diacritics 2'
 );

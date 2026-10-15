@@ -143,7 +143,7 @@ export const ChannelCard = memo(function ChannelCard({ channel: c, isFavorite, v
 
   return (
     <article className={`${cardBase} flex-col gap-3 p-3`}>
-      <div className="relative flex aspect-[16/9] items-center justify-center rounded-lg bg-zinc-100 p-5 dark:bg-zinc-800/60">
+      <div className="relative flex aspect-[4/3] items-center justify-center rounded-lg bg-zinc-100 p-4 dark:bg-zinc-800/60">
         <ChannelLogo src={c.logo} name={c.name} />
         <div className="absolute right-2 top-2">{favButton}</div>
       </div>

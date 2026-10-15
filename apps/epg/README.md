@@ -48,6 +48,7 @@ into one `<tv>` with only its `<programme>` elements.
 |----------|---------|----------|
 | `EPG_SITES` | `all` | `all` or a comma list of site names, e.g. `tvguide.com,bbc.co.uk`. Unknown names log a warning. |
 | `EPG_EXCLUDE_SITES` | (none) | Comma list of sites to drop after `EPG_SITES`. |
+| `EPG_ONE_SITE_PER_CHANNEL` | `true` | Keep a single guide site per channel (prefers a site in the channel's country, then the main feed, then the largest site). `false` grabs every mapping, which multiplies requests and produces overlapping schedules (the api de-duplicates on import). |
 | `EPG_DAYS` | `2` | Days of schedule per channel. Grabber requests = channels × days. |
 | `EPG_MAX_CONNECTIONS` | `10` | Grabber concurrency. |
 | `EPG_TIMEOUT_MS` | `30000` | Per-request timeout passed as `--timeout`. |

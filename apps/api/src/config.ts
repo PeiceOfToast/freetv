@@ -19,7 +19,7 @@ export const config = {
   ingestIntervalHours: num(process.env.INGEST_INTERVAL_HOURS, 6),
   hideNsfwDefault: bool(process.env.HIDE_NSFW_DEFAULT, true),
   proxyEnabled: bool(process.env.PROXY_ENABLED, true),
-  proxySecret: process.env.PROXY_SECRET ?? "",
+  proxySecret: /^change-me/i.test(process.env.PROXY_SECRET ?? "") ? "" : (process.env.PROXY_SECRET ?? ""),
   proxyPublicPath: (process.env.PROXY_PUBLIC_PATH ?? "/proxy").replace(/\/$/, ""),
   adminToken: process.env.ADMIN_TOKEN ?? "",
   epgFile: process.env.EPG_FILE ?? path.join(process.env.DATA_DIR ?? "/data", "epg", "guide.xml"),

@@ -64,7 +64,7 @@ export function TimelineGrid({ rows, grid, from, to, now, onSelect, onRemove }: 
                 style={{ width: CHAN_W }}
               >
                 {row.logo ? (
-                  <img src={row.logo} alt="" loading="lazy" referrerPolicy="no-referrer" className="h-8 w-8 shrink-0 object-contain" />
+                  <img src={row.logo} alt="" loading="lazy" referrerPolicy="no-referrer" className="h-8 w-8 shrink-0 object-contain" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
                 ) : (
                   <span className="h-8 w-8 shrink-0 rounded bg-zinc-200 dark:bg-zinc-800" />
                 )}
