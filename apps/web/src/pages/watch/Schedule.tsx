@@ -32,7 +32,7 @@ export function Schedule({ items, now, error }: Props) {
   if (items.length === 0) return <p className="text-sm opacity-60">No schedule data for this channel.</p>;
 
   return (
-    <div className="max-h-[28rem] space-y-4 overflow-y-auto pr-1">
+    <div className="max-h-[28rem] space-y-4 overflow-y-auto overscroll-contain pr-1">
       {groups.map((g) => (
         <div key={g.key}>
           <h3 className="sticky top-0 z-10 bg-zinc-50 py-1 text-xs font-semibold uppercase tracking-wide opacity-70 dark:bg-zinc-950">

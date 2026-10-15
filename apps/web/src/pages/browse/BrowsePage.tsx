@@ -133,11 +133,11 @@ export default function BrowsePage() {
   return (
     <div className="flex flex-col gap-4">
       <header className="pt-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Browse channels</h1>
+        <h1 className="text-[clamp(1.5rem,1.2rem+1.4vw,2rem)] font-semibold tracking-tight">Browse channels</h1>
         <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Free, publicly available TV from around the world.</p>
       </header>
 
-      <div className="sticky top-14 z-30 -mx-4 bg-zinc-50/90 px-4 py-3 backdrop-blur dark:bg-zinc-950/90">
+      <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-30 -mx-4 bg-zinc-50/90 px-4 py-3 backdrop-blur dark:bg-zinc-950/90">
         <SearchBar value={state.q} onCommit={onSearch} />
       </div>
 
@@ -145,7 +145,7 @@ export default function BrowsePage() {
         <aside
           id="browse-sidebar"
           aria-label="Filters"
-          className={`hidden w-64 shrink-0 ${sidebarOpen ? "lg:block" : "lg:hidden"} lg:sticky lg:top-36 lg:max-h-[calc(100dvh-9.5rem)] lg:overflow-y-auto lg:pr-2`}
+          className={`hidden w-64 shrink-0 ${sidebarOpen ? "lg:block" : "lg:hidden"} lg:sticky lg:top-[calc(9rem+env(safe-area-inset-top))] lg:max-h-[calc(100dvh-9.5rem)] lg:overflow-y-auto lg:overscroll-contain lg:pr-2`}
         >
           {filterPanel("side")}
         </aside>

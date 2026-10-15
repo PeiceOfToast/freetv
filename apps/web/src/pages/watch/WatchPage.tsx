@@ -126,12 +126,12 @@ export default function WatchPage() {
   return (
     <div className="space-y-6">
       <nav className="text-sm opacity-70">
-        <Link to="/" className="hover:underline">Channels</Link>
+        <Link to="/" className="inline-flex min-h-11 pointer-fine:min-h-0 items-center hover:underline">Channels</Link>
         <span className="mx-2">/</span>
         <span>{ch.name}</span>
       </nav>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="watch-split grid gap-6 lg:grid-cols-3">
         <div className="min-w-0 lg:col-span-2">
           <Player key={ch.id} streams={ch.streams} />
           <CastBar />
@@ -145,7 +145,7 @@ export default function WatchPage() {
               <div className="h-16 w-16 shrink-0 rounded bg-zinc-200 dark:bg-zinc-800" />
             )}
             <div className="min-w-0">
-              <h1 className="text-xl font-semibold tracking-tight">{ch.name}</h1>
+              <h1 className="text-[clamp(1.25rem,1.1rem+0.7vw,1.5rem)] font-semibold tracking-tight">{ch.name}</h1>
               <p className="text-sm opacity-70">
                 {ch.flag && <span className="mr-1">{ch.flag}</span>}
                 {ch.countryName ?? ch.country ?? "Unknown country"}

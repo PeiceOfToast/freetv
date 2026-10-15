@@ -37,7 +37,7 @@ function Toggle({ id, label, description, checked, onChange, children }: {
 }) {
   return (
     <div className="py-1.5">
-      <label htmlFor={id} className="flex cursor-pointer items-start justify-between gap-3">
+      <label htmlFor={id} className="flex cursor-pointer items-start justify-between gap-3 pointer-coarse:min-h-11">
         <span className="min-w-0">
           <span className="block text-sm text-zinc-800 dark:text-zinc-200">{label}</span>
           {description && <span className="block text-xs text-zinc-500 dark:text-zinc-400">{description}</span>}
@@ -84,7 +84,7 @@ function CheckList<T extends { id: string; label: string; count: number; prefix?
       <ul className="flex flex-col" aria-label={label}>
         {shown.map((i) => (
           <li key={i.id}>
-            <label className="flex cursor-pointer items-center gap-2.5 rounded-md px-1.5 py-1 text-sm hover:bg-zinc-200/50 dark:hover:bg-zinc-800/60">
+            <label className="flex cursor-pointer items-center gap-2.5 rounded-md px-1.5 py-1 text-sm pointer-coarse:min-h-11 hover:bg-zinc-200/50 dark:hover:bg-zinc-800/60">
               <input
                 type="checkbox"
                 checked={selected.includes(i.id)}

@@ -13,7 +13,7 @@ export default function AboutPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-8 py-6">
       <section className="space-y-3">
-        <h1 className="text-3xl font-semibold tracking-tight">About FreeTV</h1>
+        <h1 className="text-[clamp(1.875rem,1.5rem+1.5vw,2.5rem)] font-semibold tracking-tight">About FreeTV</h1>
         <p className="text-zinc-600 dark:text-zinc-300 leading-relaxed">
           FreeTV is a small, self-hostable website for watching the free, publicly listed TV channels that the{" "}
           <a className="underline" href={REPO}>iptv-org</a> community collects from around the world. It indexes their

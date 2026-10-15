@@ -46,7 +46,7 @@ export function Toolbar(p: ToolbarProps) {
       <Button variant="secondary" size="sm" onClick={p.onOpenFilters} aria-haspopup="dialog">
         Filters
         {p.filterCount > 0 && (
-          <span className="grid h-5 min-w-5 place-items-center rounded-full bg-zinc-900 px-1 text-[11px] text-white dark:bg-zinc-100 dark:text-zinc-900">{p.filterCount}</span>
+          <span className="grid h-5 min-w-5 place-items-center rounded-full bg-zinc-900 px-1 text-xs text-white dark:bg-zinc-100 dark:text-zinc-900">{p.filterCount}</span>
         )}
       </Button>
       </div>
@@ -54,7 +54,7 @@ export function Toolbar(p: ToolbarProps) {
       <Button variant="secondary" size="sm" onClick={p.onToggleSidebar} aria-expanded={p.sidebarOpen} aria-controls="browse-sidebar">
         {p.sidebarOpen ? "Hide filters" : "Show filters"}
         {p.filterCount > 0 && (
-          <span className="grid h-5 min-w-5 place-items-center rounded-full bg-zinc-900 px-1 text-[11px] text-white dark:bg-zinc-100 dark:text-zinc-900">{p.filterCount}</span>
+          <span className="grid h-5 min-w-5 place-items-center rounded-full bg-zinc-900 px-1 text-xs text-white dark:bg-zinc-100 dark:text-zinc-900">{p.filterCount}</span>
         )}
       </Button>
       </div>

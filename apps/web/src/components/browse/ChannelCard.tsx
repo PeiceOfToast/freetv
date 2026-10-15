@@ -35,7 +35,7 @@ function Badge({ children, tone = "neutral" }: { children: ReactNode; tone?: "ne
     tone === "warn"
       ? "border-amber-400/70 text-amber-700 dark:border-amber-500/60 dark:text-amber-400"
       : "border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-300";
-  return <span className={`rounded border px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide ${cls}`}>{children}</span>;
+  return <span className={`rounded border px-1.5 py-px text-xs font-semibold uppercase tracking-wide ${cls}`}>{children}</span>;
 }
 
 function NowLine({ channel, now }: { channel: ChannelSummary; now: number }) {
@@ -87,7 +87,7 @@ function Tags({ categories }: { categories: string[] }) {
   return (
     <div className="flex min-w-0 flex-wrap gap-1">
       {categories.slice(0, 2).map((cat) => (
-        <span key={cat} className="rounded-md bg-zinc-100 px-1.5 py-0.5 text-[11px] capitalize text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+        <span key={cat} className="rounded-md bg-zinc-100 px-1.5 py-0.5 text-xs capitalize text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
           {cat}
         </span>
       ))}
@@ -119,7 +119,7 @@ export const ChannelCard = memo(function ChannelCard({ channel: c, isFavorite, v
   // The title link stretches over the whole card (after:inset-0) so the card is clickable,
   // while the heart button sits above it with its own z-index.
   const titleLink = (
-    <Link to={href} className="truncate text-sm font-semibold text-zinc-900 after:absolute after:inset-0 after:rounded-xl focus:outline-none dark:text-zinc-100">
+    <Link to={href} className="block truncate text-sm font-semibold text-zinc-900 after:absolute after:inset-0 after:rounded-xl focus:outline-none dark:text-zinc-100">
       {c.name}
     </Link>
   );

@@ -1,8 +1,11 @@
+import { useEffect, useState } from "react";
 import type { Programme } from "@/lib/api";
 import { fmtTime } from "@/lib/format";
 
 export const PX_PER_MIN = 4;
 export const CHAN_W = 200;
+/** Narrower channel column on phones, so more of the timeline is visible at 320 to 640 px. */
+export const CHAN_W_PHONE = 168;
 const ROW_H = 56;
 const HEADER_H = 32;
 
@@ -23,21 +26,36 @@ interface Props {
   onRemove?: (id: string) => void;
 }
 
+
+function useChanW(): number {
+  const [isWide, setWide] = useState(() => typeof window === "undefined" || !window.matchMedia || window.matchMedia("(min-width: 640px)").matches);
+  useEffect(() => {
+    if (!window.matchMedia) return;
+    const mq = window.matchMedia("(min-width: 640px)");
+    const onChange = () => setWide(mq.matches);
+    onChange();
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  return isWide ? CHAN_W : CHAN_W_PHONE;
+}
+
 export function TimelineGrid({ rows, grid, from, to, now, onSelect, onRemove }: Props) {
+  const chanW = useChanW();
   const trackW = ((to - from) / 60) * PX_PER_MIN;
   const ticks: number[] = [];
   for (let t = from; t < to; t += 1800) ticks.push(t);
-  const nowX = now >= from && now <= to ? CHAN_W + ((now - from) / 60) * PX_PER_MIN : null;
+  const nowX = now >= from && now <= to ? chanW + ((now - from) / 60) * PX_PER_MIN : null;
 
   return (
-    <div className="relative max-h-[70vh] overflow-auto rounded-md border border-zinc-200 dark:border-zinc-800">
-      <div className="relative" style={{ width: CHAN_W + trackW }}>
+    <div className="relative max-h-[70dvh] overflow-auto overscroll-contain rounded-md border border-zinc-200 dark:border-zinc-800">
+      <div className="relative" style={{ width: chanW + trackW }}>
         {/* Time header */}
         <div
           className="sticky top-0 z-20 flex border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950"
           style={{ height: HEADER_H }}
         >
-          <div className="sticky left-0 z-30 shrink-0 bg-zinc-50 dark:bg-zinc-950" style={{ width: CHAN_W }} />
+          <div className="sticky left-0 z-30 shrink-0 bg-zinc-50 dark:bg-zinc-950" style={{ width: chanW }} />
           <div className="relative" style={{ width: trackW }}>
             {ticks.map((t) => (
               <span
@@ -61,7 +79,7 @@ export function TimelineGrid({ rows, grid, from, to, now, onSelect, onRemove }: 
             >
               <div
                 className="sticky left-0 z-10 flex shrink-0 items-center gap-2 border-r border-zinc-200 bg-zinc-50 px-2 dark:border-zinc-800 dark:bg-zinc-950"
-                style={{ width: CHAN_W }}
+                style={{ width: chanW }}
               >
                 {row.logo ? (
                   <img src={row.logo} alt="" loading="lazy" referrerPolicy="no-referrer" className="h-8 w-8 shrink-0 object-contain" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />

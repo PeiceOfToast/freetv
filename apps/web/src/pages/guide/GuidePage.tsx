@@ -116,7 +116,7 @@ export default function GuidePage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="mr-auto text-xl font-semibold tracking-tight">TV guide</h1>
+        <h1 className="mr-auto text-[clamp(1.25rem,1.1rem+0.7vw,1.5rem)] font-semibold tracking-tight">TV guide</h1>
 
         <div role="group" aria-label="Time window" className="flex overflow-hidden rounded-md border border-zinc-300 text-sm dark:border-zinc-700">
           {WINDOWS.map((h) => (
@@ -163,7 +163,7 @@ export default function GuidePage() {
       ) : (
         <>
           <details className="rounded-md border border-zinc-200 p-3 text-sm dark:border-zinc-800">
-            <summary className="cursor-pointer select-none font-medium">Add channels ({ids.length} in guide)</summary>
+            <summary className="flex min-h-11 pointer-fine:min-h-0 cursor-pointer select-none items-center font-medium">Add channels ({ids.length} in guide)</summary>
             <div className="mt-3 max-w-xl">
               <ChannelSearch addedIds={ids} onAdd={(id) => favorites.toggle(id)} />
             </div>

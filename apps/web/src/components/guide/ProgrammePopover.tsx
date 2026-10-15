@@ -23,7 +23,7 @@ export function ProgrammePopover({ channelId, channelName, programme: p, onClose
     <div
       role="dialog"
       aria-label={p.title}
-      className="fixed inset-x-4 bottom-4 z-50 rounded-lg border border-zinc-200 bg-white p-4 shadow-xl sm:left-auto sm:right-6 sm:top-24 sm:bottom-auto sm:w-96 dark:border-zinc-700 dark:bg-zinc-900"
+      className="fixed inset-x-4 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-50 rounded-lg border border-zinc-200 bg-white p-4 shadow-xl sm:left-auto sm:right-6 sm:top-24 sm:bottom-auto sm:w-96 dark:border-zinc-700 dark:bg-zinc-900"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -43,7 +43,7 @@ export function ProgrammePopover({ channelId, channelName, programme: p, onClose
         {fmtDate(p.start)} · {fmtTime(p.start)}–{fmtTime(p.stop)}
         {p.category && <span> · {p.category}</span>}
       </p>
-      {p.description && <p className="mt-3 max-h-40 overflow-y-auto text-sm leading-relaxed">{p.description}</p>}
+      {p.description && <p className="mt-3 max-h-40 overflow-y-auto overscroll-contain text-sm leading-relaxed">{p.description}</p>}
       <div className="mt-4 flex justify-end">
         <Link
           to={`/watch/${encodeURIComponent(channelId)}`}

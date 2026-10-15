@@ -57,7 +57,7 @@ export function ChannelSearch({ addedIds, onAdd }: Props) {
       {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
       {busy && results.length === 0 && <p className="text-xs opacity-60">Searching…</p>}
       {results.length > 0 && (
-        <ul className="max-h-72 divide-y divide-zinc-200 overflow-y-auto rounded-md border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+        <ul className="max-h-72 divide-y divide-zinc-200 overflow-y-auto overscroll-contain rounded-md border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
           {results.map((c) => {
             const added = addedIds.includes(c.id);
             return (

@@ -55,7 +55,8 @@ function IosInstallHint() {
 export function Layout() {
   const [theme, setTheme] = useTheme();
   return (
-    <div className="min-h-screen flex flex-col pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
+    // dvh tracks the visible viewport on mobile browsers (the address bar grows and shrinks); vh does not.
+    <div className="min-h-screen supports-[height:100dvh]:min-h-dvh flex flex-col pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
       <header className="sticky top-0 z-40 border-b border-zinc-200/80 dark:border-zinc-800/80 bg-zinc-50/90 dark:bg-zinc-950/90 backdrop-blur pt-[env(safe-area-inset-top)]">
         <div className="mx-auto max-w-screen-2xl px-4 h-14 flex items-center gap-1 sm:gap-2">
           {/* The tap area is 44 px (p-2) but the layout box stays 28 px (-m-2). */}
