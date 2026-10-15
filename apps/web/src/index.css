@@ -1,0 +1,9 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root { color-scheme: light dark; }
+html { scroll-behavior: smooth; }
+body { @apply bg-zinc-50 text-zinc-900 antialiased; }
+.dark body { @apply bg-zinc-950 text-zinc-100; }
+/* subtle scrollbars */
+* { scrollbar-width: thin; scrollbar-color: rgb(113 113 122 / .5) transparent; }

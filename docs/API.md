@@ -1,0 +1,132 @@
+# HTTP API contract (`api` service)
+
+All responses are JSON, UTF-8, `Cache-Control: public, max-age=60` unless noted. Errors:
+`{ "error": "message" }` with 4xx/5xx. All list endpoints accept `limit` (default 60, max 200) and `page` (1-based).
+Boolean query params accept `true|false|1|0`.
+
+Times are unix seconds (UTC). IDs are iptv-org channel ids, e.g. `BBCNews.uk`.
+
+## `GET /api/health`
+`{ "ok": true }` — 200 if the DB is open.
+
+## `GET /api/meta`
+```json
+{
+  "channels": 31570, "streams": 18022, "channelsWithStreams": 9000,
+  "lastIngest": 1760500000, "lastEpgImport": 1760500000, "programmes": 1234567,
+  "proxyEnabled": true, "hideNsfwDefault": true, "version": "0.1.0"
+}
+```
+
+## `GET /api/categories` · `GET /api/countries` · `GET /api/languages`
+Arrays, sorted by `name`, only entries with `channelCount > 0`.
+```json
+[{ "id": "news", "name": "News", "description": "...", "channelCount": 812 }]
+[{ "code": "US", "name": "United States", "flag": "🇺🇸", "channelCount": 2200 }]
+[{ "code": "eng", "name": "English", "channelCount": 5000 }]
+```
+Optional `?withStreams=true` counts only channels that have ≥1 stream.
+
+## `GET /api/channels`
+Query params (all optional):
+
+| param | type | meaning |
+|-------|------|---------|
+| `q` | string | Full-text search over name, alt names, network, owners, country name, id. Prefix matching on the last token. |
+| `category` | string | category id; comma list = OR |
+| `country` | string | ISO-3166 alpha-2; comma list = OR |
+| `language` | string | ISO-639-3; comma list = OR |
+| `hasStream` | bool (default `true`) | only channels with ≥1 stream |
+| `online` | bool (default `false`) | only channels with ≥1 stream whose last health check was `online` (if health data exists; otherwise ignored) |
+| `nsfw` | bool (default = `!HIDE_NSFW_DEFAULT`) | include NSFW/blocklisted channels |
+| `quality` | string | minimum quality: `sd`, `720p`, `1080p`, `2160p` (compares `best_quality`) |
+| `favorites` | comma list of ids | restrict to these ids (UI passes localStorage favorites) |
+| `sort` | `relevance` (default when `q`), `name` (default otherwise), `country`, `streams`, `quality`, `updated` | |
+| `order` | `asc` / `desc` | default `asc`, except `streams`/`quality`/`updated` default `desc` |
+| `page`, `limit` | | |
+
+Response:
+```json
+{
+  "total": 812, "page": 1, "limit": 60,
+  "items": [ChannelSummary]
+}
+```
+`ChannelSummary`:
+```json
+{
+  "id": "BBCNews.uk", "name": "BBC News", "country": "GB", "countryName": "United Kingdom", "flag": "🇬🇧",
+  "categories": ["news"], "languages": ["eng"], "network": "BBC", "isNsfw": false,
+  "logo": "https://.../logo.png", "streamCount": 3, "bestQuality": "1080p",
+  "online": null,
+  "hasGuide": true,
+  "now": { "title": "Newsday", "start": 1760500000, "stop": 1760503600 }
+}
+```
+`now` is included only when `withNow=true` (costs one extra query per page) — the browse grid requests it; `online` is `true|false|null` (null = never probed).
+
+## `GET /api/channels/:id`
+404 if unknown. Returns `ChannelDetail`:
+```json
+{
+  "id": "BBCNews.uk", "name": "BBC News", "altNames": [], "network": "BBC", "owners": ["BBC"],
+  "country": "GB", "countryName": "United Kingdom", "flag": "🇬🇧",
+  "categories": [{ "id": "news", "name": "News" }],
+  "languages": [{ "code": "eng", "name": "English" }],
+  "broadcastArea": ["c/GB"], "isNsfw": false, "launched": "1997-11-09", "closed": null, "replacedBy": null,
+  "website": "https://www.bbc.co.uk/news", "logo": "https://...",
+  "streams": [
+    { "index": 0, "url": "https://.../master.m3u8", "title": "BBC News", "quality": "1080p", "labels": [],
+      "feed": "HD", "userAgent": null, "referrer": null, "online": null, "lastChecked": null,
+      "proxyUrl": "/proxy/<sig>/<payload>" }
+  ],
+  "guides": [{ "site": "bbc.co.uk", "siteId": "bbc_news24", "lang": "en" }],
+  "now":  { "title": "...", "start": 0, "stop": 0, "description": "...", "category": null, "icon": null },
+  "next": { "title": "...", "start": 0, "stop": 0 }
+}
+```
+Streams are ordered: `https` before `http`, then higher quality first, then original order. `proxyUrl` is omitted when the proxy is disabled.
+
+## `GET /api/channels/:id/epg?from=<ts>&to=<ts>`
+Defaults: `from` = now − 2 h, `to` = now + 24 h. Max window 7 days.
+```json
+{ "channel": "BBCNews.uk", "items": [ { "title": "...", "description": "...", "start": 0, "stop": 0, "category": "News", "icon": null } ] }
+```
+
+## `GET /api/epg/now?ids=a,b,c`
+Batch now/next for up to 200 ids: `{ "a": { "now": {...}|null, "next": {...}|null }, ... }`.
+
+## `GET /api/epg/grid?ids=a,b,c&from=<ts>&to=<ts>`
+Up to 100 ids, window ≤ 24 h. `{ "from": 0, "to": 0, "channels": { "a": [Programme], ... } }`.
+
+## `GET /api/stream/:id/:index/play`
+Resolve a single stream (used when the UI wants a fresh signed URL):
+`{ "url": "...", "proxyUrl": "/proxy/...", "userAgent": null, "referrer": null }`.
+
+## `POST /api/admin/ingest`  (header `Authorization: Bearer $ADMIN_TOKEN`)
+Triggers a re-ingest in the background. `202 { "started": true }`.
+
+## `POST /api/admin/epg/import`  (same auth)
+Forces an XMLTV re-import. `202 { "started": true }`.
+
+---
+
+# Proxy contract (`proxy` service)
+
+`GET ${PROXY_PUBLIC_PATH}/:sig/:payload` — see ARCHITECTURE.md for signing. Returns 403 on bad signature,
+502 on upstream failure, 413 if a single upstream response exceeds `PROXY_MAX_BYTES` (default 50 MB; playlists are tiny, segments are a few MB).
+`GET /healthz` → `ok`.
+
+# Shared signing helper
+
+Both `api` and `proxy` implement the same function (copy, do not share a package):
+
+```ts
+import { createHmac } from "node:crypto";
+export function b64url(buf: Buffer | string) { return Buffer.from(buf).toString("base64url"); }
+export function signPayload(secret: string, payload: string) { return createHmac("sha256", secret).update(payload).digest("base64url"); }
+export function makeProxyUrl(secret: string, publicPath: string, u: string, ua?: string | null, r?: string | null) {
+  const payload = b64url(JSON.stringify({ u, ...(ua ? { ua } : {}), ...(r ? { r } : {}) }));
+  return `${publicPath}/${signPayload(secret, payload)}/${payload}`;
+}
+```
