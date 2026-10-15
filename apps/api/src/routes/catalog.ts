@@ -1,10 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { config } from "../config.js";
+import { publicLogoUrl } from "../lib/logo-cache.js";
 import { getDb, type Db } from "../db/index.js";
 import { planChannels } from "../lib/channel-query.js";
 import { HttpError, boolParam, installHttpBehaviour, intParam, qs } from "../lib/http.js";
 import { parseJsonArray, nowSec, placeholders, prep } from "../lib/sql.js";
-import { healthOf, nextShape, nowShape, proxyUrlFor, type ProgrammeRow } from "../lib/views.js";
+import { healthOf, nextShape, nowShape, proxyUrlFor, relayOnlyOf, type ProgrammeRow } from "../lib/views.js";
 
 interface ListRow {
   id: string;
@@ -79,7 +80,18 @@ function meta(db: Db) {
     proxyEnabled: config.proxyEnabled && config.proxySecret !== "",
     hideNsfwDefault: config.hideNsfwDefault,
     version: config.version,
+    health: healthMeta(db),
   };
+}
+
+/** Stream health summary from the prober's rows on `streams` (probed = has a published status). */
+function healthMeta(db: Db) {
+  const row = prep(
+    db,
+    "SELECT COUNT(CASE WHEN status IS NOT NULL THEN 1 END) AS probed, COUNT(CASE WHEN status = 'online' THEN 1 END) AS online FROM streams",
+  ).get() as { probed: number; online: number };
+  const last = prep(db, "SELECT value FROM meta WHERE key = 'last_probe'").get() as { value: string } | undefined;
+  return { probed: row.probed, online: row.online, lastProbe: last ? Number(last.value) : null };
 }
 
 export async function catalogRoutes(app: FastifyInstance) {
@@ -151,7 +163,7 @@ export async function catalogRoutes(app: FastifyInstance) {
         languages: parseJsonArray(r.languages),
         network: r.network,
         isNsfw: r.is_nsfw === 1,
-        logo: r.logo_url,
+        logo: publicLogoUrl(r.id, r.logo_url),
         streamCount: r.stream_count,
         bestQuality: r.best_quality,
         online: onlineOf(r),
@@ -206,13 +218,17 @@ export async function catalogRoutes(app: FastifyInstance) {
     const streams = (
       prep(
         db,
-        `SELECT idx, url, title, quality, labels, feed, user_agent, referrer, status, last_checked
-         FROM streams WHERE channel = ? ORDER BY idx`,
+        `SELECT idx, url, title, quality, quality_rank, labels, feed, user_agent, referrer, status, last_checked
+         FROM streams WHERE channel = ?
+         ORDER BY CASE status WHEN 'online' THEN 0 WHEN 'offline' THEN 2 ELSE 1 END,
+                  CASE WHEN lower(trim(url)) LIKE 'https://%' THEN 0 ELSE 1 END,
+                  quality_rank DESC, idx`,
       ).all(id) as Array<{
         idx: number;
         url: string;
         title: string | null;
         quality: string | null;
+        quality_rank: number;
         labels: string;
         feed: string | null;
         user_agent: string | null;
@@ -233,6 +249,7 @@ export async function catalogRoutes(app: FastifyInstance) {
         referrer: s.referrer,
         online: healthOf(s.status),
         lastChecked: s.last_checked,
+        relayOnly: relayOnlyOf(s.user_agent, s.referrer),
         ...(proxyUrl !== undefined ? { proxyUrl } : {}),
       };
     });
@@ -282,7 +299,7 @@ export async function catalogRoutes(app: FastifyInstance) {
       closed: ch.closed,
       replacedBy: ch.replaced_by,
       website: ch.website,
-      logo: ch.logo_url,
+      logo: publicLogoUrl(ch.id, ch.logo_url),
       number: ch.number,
       streams,
       guides,

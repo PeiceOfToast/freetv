@@ -1,0 +1,70 @@
+{{- if .Values.proxy.enabled }}
+{{- $name := include "freetv.component" (dict "root" . "name" "proxy") }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "freetv.labels" . | nindent 4 }}
+    app.kubernetes.io/component: proxy
+spec:
+  replicas: {{ .Values.proxy.replicas }}
+  selector:
+    matchLabels:
+      {{- include "freetv.selector" . | nindent 6 }}
+      app.kubernetes.io/component: proxy
+  template:
+    metadata:
+      labels:
+        {{- include "freetv.selector" . | nindent 8 }}
+        app.kubernetes.io/component: proxy
+    spec:
+      containers:
+        - name: proxy
+          image: {{ include "freetv.image" (dict "root" . "name" "proxy") | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 3001
+          env:
+            - name: PORT
+              value: "3001"
+            - name: PROXY_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "freetv.secretName" . }}
+                  key: PROXY_SECRET
+            {{- range $key, $value := .Values.proxy.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 60
+          resources:
+            {{- toYaml .Values.proxy.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "freetv.labels" . | nindent 4 }}
+    app.kubernetes.io/component: proxy
+spec:
+  selector:
+    {{- include "freetv.selector" . | nindent 4 }}
+    app.kubernetes.io/component: proxy
+  ports:
+    - name: http
+      port: 3001
+      targetPort: http
+{{- end }}

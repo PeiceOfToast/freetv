@@ -144,3 +144,100 @@ architecture, usually because CI has not published that tag yet. Build locally w
 
 **Builds are slow on small hosts.** The first `--build` compiles every image on the box. Pulling
 published images avoids that.
+
+## Monitoring (optional)
+
+The `monitoring` profile adds Prometheus (scrapes the api and proxy `/metrics` endpoints on the compose
+network) and Grafana with one provisioned dashboard, **FreeTV**.
+
+```sh
+# .env
+COMPOSE_PROFILES=proxy,epg,monitoring
+GRAFANA_ADMIN_PASSWORD=<a long random password>    # openssl rand -hex 24
+```
+
+```sh
+docker compose up -d
+ssh -L 3002:127.0.0.1:3002 <user>@<host>          # from your laptop
+# then open http://localhost:3002 and log in as admin
+```
+
+- Grafana listens on `127.0.0.1:3002` only. It is not behind Caddy and has no public route. Reach it
+  through the SSH tunnel above. If you want it public, put it behind your own authenticated proxy; that is out of scope here.
+- Prometheus publishes no port and keeps 30 days of data (`PROMETHEUS_RETENTION`). Each container is capped
+  at 512 MB.
+- `update.sh` refuses to run with the monitoring profile enabled and the placeholder password.
+- The dashboard panels map to the metrics listed under `GET /metrics` in [API.md](API.md). The relay panels
+  (`freetv_proxy_*`) need the proxy to expose `/metrics`. Until it does, the proxy target is down and those
+  panels stay empty. Everything else still works.
+- Disable: remove `monitoring` from `COMPOSE_PROFILES`, then `docker compose up -d --remove-orphans`.
+  Data stays in the `prometheus_data` and `grafana_data` volumes until you remove them.
+- The free uptime check on `/api/health` in [OPERATIONS.md](OPERATIONS.md) still works without this profile.
+
+## Automatic updates (optional)
+
+Two ways to update unattended. Pick one. Neither is on by default.
+
+### A. Weekly systemd timer (recommended)
+
+Runs `infra/scripts/update.sh` as the service user every Sunday at 04:00 (plus up to 30 minutes of random delay).
+It does `git pull --ff-only`, pulls images or builds them, restarts, reloads Caddy if its config changed, and prunes.
+It works for both deployment styles.
+
+```sh
+sudo infra/auto-update/install.sh                 # pull published images; build if missing
+sudo infra/auto-update/install.sh --build         # always build from this checkout
+sudo infra/auto-update/install.sh --dir /opt/freetv --user freetv
+systemctl list-timers freetv-update.timer         # next run
+journalctl -u freetv-update.service -n 200        # last run's output
+sudo infra/auto-update/install.sh --uninstall
+```
+
+- The checkout must be a git clone owned by the service user, and that user must be in the `docker` group.
+  The installer warns otherwise.
+- A failed `git pull` (dirty tree, diverged branch) stops the run before anything is restarted. The stack
+  keeps running the old code.
+- Read the release notes before you accept an update. New env variables are not added to your `.env`
+  automatically; `.env.example` lists them.
+
+### B. Watchtower (`autoupdate` profile)
+
+```sh
+# .env
+COMPOSE_PROFILES=proxy,epg,autoupdate
+WATCHTOWER_SCHEDULE=0 0 4 * * *                   # 6-field cron (seconds first), default 04:00 daily
+```
+
+Watchtower polls the registry once a day and recreates only the containers labelled
+`com.centurylinklabs.watchtower.enable=true` (all FreeTV services are).
+
+Trade-offs:
+
+- It only helps when you **pull published images** from GHCR. A `--build` host gets no benefit, and Watchtower may
+  replace a local build with whatever is on GHCR. Use option A there.
+- It updates **images only**. It does not `git pull`, so changes to `docker-compose.yml`, `infra/caddy/Caddyfile`,
+  `.env` or new env variables are not applied. You can end up running new images with an old checkout.
+- It needs `/var/run/docker.sock`. Whoever controls that container controls the host. The image tag
+  `nickfedor/watchtower:latest` is not pinned. Pin it to a version you have checked before enabling this.
+- The Caddy reload that `update.sh` does is also not done. A Caddyfile change needs `docker compose restart web`.
+
+## Other hosts (Fly, Hetzner, Kubernetes)
+
+Compose on a single VM is still the supported path. These variants exist for other platforms. **None of them has
+been deployed.** They are starting points.
+
+| Target | Where | What it is |
+|--------|-------|-----------|
+| Hetzner Cloud | [infra/deploy/hetzner/README.md](../infra/deploy/hetzner/README.md) | cloud-init for Ubuntu 24.04 with ufw, plus an `hcloud` one-liner. Same stack as compose. |
+| Fly.io | [infra/deploy/fly/README.md](../infra/deploy/fly/README.md) | One Fly app per service: web (public), api (private, one volume). No proxy or epg. |
+| Kubernetes | `infra/deploy/helm/freetv/` | Helm chart: Deployments, Services, one PVC, and an Ingress routing `/api`, `/logo`, `/proxy` and `/`. Set `domain`, `secrets.proxySecret` and a ReadWriteMany storage class. |
+
+Things to know before you pick one:
+
+- **Fly** cannot run compose and cannot share a volume between apps, so `epg` does not fit. The guide is then
+  empty unless you move it onto the api volume by hand.
+- **Kubernetes** needs ReadWriteMany storage for the shared data volume (api and epg), or both pods pinned to one
+  node. The api runs with one replica and the `Recreate` strategy because the catalog is SQLite.
+- **Kubernetes:** run `helm lint` and `helm template` before you install. The chart has not been run through
+  Helm in a cluster. Check the Ingress for `/logo` and `/proxy`, which the chart routes directly instead of through Caddy.
+- Fly and Kubernetes skip the Caddy edge config. Check that `/logo/*` reaches the api in your setup, or logos break.

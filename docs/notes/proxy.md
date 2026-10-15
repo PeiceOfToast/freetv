@@ -43,3 +43,36 @@
 - `api` must use the same `PROXY_SECRET` and `PROXY_PUBLIC_PATH` as this service.
 - Caddy does not need to strip `/proxy`. Both forms are accepted, and rewritten URLs keep the prefix.
 - `docker build` depends on the local Docker daemon being reachable.
+
+## Rate limiting, concurrency and metrics
+
+- **Token bucket per client IP.** Each key starts full at `PROXY_RATE_LIMIT_BURST`, refills at
+  `PROXY_RATE_LIMIT_RPS` and spends one token per request. `Retry-After` is the time until one token
+  is available, rounded up, at least 1 s. The clock is injectable so the unit tests are deterministic.
+- **Bounded memory.** The bucket map holds at most 50k keys. A new key over the cap evicts the least
+  recently used one. A sweep every 60 s drops buckets that have refilled to full. A full bucket is the
+  same as no bucket, so the sweep never changes a decision. The timer is `unref`'d and cleared on close.
+- **Order of checks.** Rate limit comes after the signature check. Only URLs the api signed can use
+  tokens, so random traffic cannot starve a real viewer. Target and SSRF checks come after the limit.
+- **Concurrency.** A per-IP cap (`PROXY_MAX_CONCURRENT_PER_IP`, default 16) gives `429`. The global
+  cap gives `503`. The per-IP check runs first, so one client hitting its own cap does not look like
+  global overload. Both slots are released once, on the response `close`.
+- **Client IP.** `PROXY_TRUST_PROXY=true` takes the **last** `X-Forwarded-For` entry if it parses as an
+  IP, and falls back to the socket address otherwise. IPv4-mapped IPv6 is normalised, both dotted and
+  hex. Caddy's `reverse_proxy` appends the peer address it saw to any header the client sent, so the
+  last entry is the trustworthy one and a client rotating its own `X-Forwarded-For` still lands in one
+  bucket. (The track originally used the first entry; the integrator switched it to the last entry for
+  exactly this reason. If another trusted hop is ever placed in front of Caddy, revisit this.)
+- **Logs.** The address is salted and hashed, with a per-process salt, and cut to 12 hex characters.
+  The upstream target host is still logged, as before. `kind` is a guess from the signed URL's path
+  until the upstream content type is known, then the real value.
+- **Metrics.** Hand-rolled, about 150 lines in `src/metrics.ts`, Prometheus text format 0.0.4. Counters
+  and gauges are label-set maps. The histogram is cumulative on render. `requests_total` is recorded
+  once per request, on `finish` or `close`, whichever comes first. `bytes_total{client}` is bytes sent
+  to the client, and `{upstream}` is bytes received, including bytes that were cut off by the cap.
+  `active_requests` counts requests holding an upstream slot, so it matches the global cap.
+  `rate_limited_total` covers only the token bucket. Per-IP concurrency `429`s appear only under
+  `requests_total{status="429"}`.
+- **Not done.** No labels on `requests_total` for client IP, which would be unbounded and would leak
+  addresses. No auth on `/metrics`; it is internal only.
+

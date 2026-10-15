@@ -39,7 +39,11 @@ All images are multi-arch (amd64 + arm64) because the reference host is an ARM V
 | `LOGO_MAX_SIZE` | `512` | api | Largest edge served. |
 | `PROXY_RATE_LIMIT_RPS` | `20` | proxy | Per-client-IP sustained requests/second (segments are ~1 req/2–6 s per viewer; 20 allows several tabs). |
 | `PROXY_RATE_LIMIT_BURST` | `60` | proxy | Burst allowance. |
+| `PROXY_MAX_CONCURRENT_PER_IP` | `16` | proxy | Concurrent relayed requests per client IP (0 disables). |
 | `PROXY_TRUST_PROXY` | `true` | proxy | Use `X-Forwarded-For` (set by Caddy) for the client IP. |
+| `GRAFANA_ADMIN_PASSWORD` | *(placeholder)* | monitoring profile | Grafana admin password (loopback-only UI on :3002). |
+| `PROMETHEUS_RETENTION` | `15d` | monitoring profile | Metrics retention. |
+| `WATCHTOWER_SCHEDULE` | daily | autoupdate profile | Cron for image auto-updates. |
 | `LOCAL_BLOCKLIST` | `$DATA_DIR/local-blocklist.json` | api | Optional JSON array of channel ids (or `{channel}` objects) this instance should hide in addition to iptv-org's blocklist. |
 | `ADMIN_TOKEN` | *(empty)* | api | If set, `POST /api/admin/ingest` with `Authorization: Bearer` forces a re-ingest. |
 | `EPG_FILE` | `/data/epg/guide.xml` | api, epg | XMLTV path. api polls its mtime every 60 s and re-imports on change. |

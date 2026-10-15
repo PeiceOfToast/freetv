@@ -1,0 +1,102 @@
+# FreeTV Helm values. UNTESTED. Mirrors .env (docs/ARCHITECTURE.md "Environment variables");
+# the key under each block names the matching variable in the comment.
+#
+# Routing: the Ingress sends /api and /logo to the api, /proxy to the proxy, and everything else to web.
+# So the web container only serves the SPA and never proxies (its Caddy upstreams are unused here).
+
+image:
+  # GITHUB_REPOSITORY_OWNER and FREETV_TAG. Images: ghcr.io/<owner>/freetv-<svc>:<tag>.
+  owner: freetv
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# DOMAIN. Ingress host. Empty matches any host (testing only).
+domain: tv.example.com
+# PUBLIC_URL. Base for absolute URLs in M3U exports and Cast. Defaults to https://<domain> when empty.
+publicUrl: ""
+
+ingress:
+  className: nginx
+  # TLS via cert-manager. Requires a ClusterIssuer; remove the annotation to bring your own secret.
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  tls: true
+  tlsSecretName: freetv-tls
+
+secrets:
+  # Name of an existing Secret with keys PROXY_SECRET (required) and ADMIN_TOKEN (optional).
+  # When empty, the chart creates one from proxySecret and adminToken below.
+  existingSecret: ""
+  # PROXY_SECRET. Required when existingSecret is empty. openssl rand -hex 32
+  proxySecret: ""
+  # ADMIN_TOKEN. Empty disables /api/admin/*.
+  adminToken: ""
+
+# Shared data volume (catalog.db, raw datasets, epg/guide.xml, logos). Mounted by api and epg.
+# api and epg run on different nodes unless affinity pins them together, so use ReadWriteMany
+# (for example an NFS-backed class). With ReadWriteOnce, pin api and epg to one node.
+storage:
+  storageClass: ""
+  accessMode: ReadWriteMany
+  size: 5Gi
+
+web:
+  replicas: 2
+  resources:
+    requests: { cpu: 10m, memory: 32Mi }
+    limits: { memory: 128Mi }
+
+api:
+  # Keep at 1. The catalog is SQLite with a single writer.
+  replicas: 1
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 1Gi }
+  env:
+    IPTV_API_BASE: https://iptv-org.github.io/api        # IPTV_API_BASE
+    INGEST_INTERVAL_HOURS: "6"                           # INGEST_INTERVAL_HOURS
+    HIDE_NSFW_DEFAULT: "true"                            # HIDE_NSFW_DEFAULT
+    PROXY_ENABLED: "true"                                # PROXY_ENABLED (set false with proxy.enabled=false)
+    PROXY_PUBLIC_PATH: /proxy                            # PROXY_PUBLIC_PATH
+    EPG_FILE: /data/epg/guide.xml                        # EPG_FILE
+    DATA_DIR: /data
+    PROBE_ENABLED: "true"                                # PROBE_ENABLED
+    PROBE_INTERVAL_HOURS: "6"                            # PROBE_INTERVAL_HOURS
+    PROBE_CONCURRENCY: "8"                               # PROBE_CONCURRENCY
+    PROBE_RATE_PER_SECOND: "5"                           # PROBE_RATE_PER_SECOND
+    PROBE_TIMEOUT_MS: "10000"                            # PROBE_TIMEOUT_MS
+    LOGO_CACHE_ENABLED: "true"                           # LOGO_CACHE_ENABLED
+    LOGO_CACHE_MAX_MB: "500"                             # LOGO_CACHE_MAX_MB
+    LOGO_MAX_SIZE: "512"                                 # LOGO_MAX_SIZE
+    LOCAL_BLOCKLIST: /data/local-blocklist.json          # LOCAL_BLOCKLIST
+
+proxy:
+  # Remove the proxy profile: set false, and set api.env.PROXY_ENABLED to "false".
+  enabled: true
+  replicas: 1
+  resources:
+    requests: { cpu: 100m, memory: 64Mi }
+    limits: { memory: 512Mi }
+  env:
+    PROXY_PUBLIC_PATH: /proxy                            # PROXY_PUBLIC_PATH
+    PROXY_MAX_CONCURRENT: "200"                          # PROXY_MAX_CONCURRENT
+    PROXY_MAX_BYTES: "52428800"                          # PROXY_MAX_BYTES
+    PROXY_RATE_LIMIT_RPS: "20"                           # PROXY_RATE_LIMIT_RPS
+    PROXY_RATE_LIMIT_BURST: "60"                         # PROXY_RATE_LIMIT_BURST
+    PROXY_MAX_CONCURRENT_PER_IP: "16"                    # PROXY_MAX_CONCURRENT_PER_IP
+    PROXY_TRUST_PROXY: "true"                            # PROXY_TRUST_PROXY (the ingress sets X-Forwarded-For)
+
+epg:
+  # Remove the epg profile by setting enabled false.
+  enabled: true
+  resources:
+    requests: { cpu: 500m, memory: 512Mi }
+    limits: { cpu: "2", memory: 2Gi }
+  env:
+    IPTV_API_BASE: https://iptv-org.github.io/api        # IPTV_API_BASE
+    EPG_SITES: all                                       # EPG_SITES. Narrow this on small clusters.
+    EPG_DAYS: "2"                                        # EPG_DAYS
+    EPG_MAX_CONNECTIONS: "10"                            # EPG_MAX_CONNECTIONS
+    EPG_INTERVAL_HOURS: "12"                             # EPG_INTERVAL_HOURS
+    EPG_RUN_ON_START: "true"                             # EPG_RUN_ON_START
+    EPG_FILE: /data/epg/guide.xml                        # EPG_FILE

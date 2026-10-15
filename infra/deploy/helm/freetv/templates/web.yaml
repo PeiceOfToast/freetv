@@ -1,0 +1,51 @@
+{{- $name := include "freetv.component" (dict "root" . "name" "web") }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "freetv.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  replicas: {{ .Values.web.replicas }}
+  selector:
+    matchLabels:
+      {{- include "freetv.selector" . | nindent 6 }}
+      app.kubernetes.io/component: web
+  template:
+    metadata:
+      labels:
+        {{- include "freetv.selector" . | nindent 8 }}
+        app.kubernetes.io/component: web
+    spec:
+      containers:
+        - name: web
+          # Serves the SPA only. The Ingress routes /api, /logo and /proxy to their services.
+          image: {{ include "freetv.image" (dict "root" . "name" "web") | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.web.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "freetv.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  selector:
+    {{- include "freetv.selector" . | nindent 4 }}
+    app.kubernetes.io/component: web
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

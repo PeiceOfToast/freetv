@@ -1,0 +1,40 @@
+# Fly.io app for the FreeTV api (catalog, EPG import, relay signing). Private only: no public
+# service, reachable from the web app at freetv-api.internal:3000.
+# UNTESTED. Replace the app name and the region. The volume must exist before the first deploy.
+#
+#   fly apps create freetv-api
+#   fly volumes create freetv_data --app freetv-api --region ams --size 3
+#   fly secrets set --app freetv-api PROXY_SECRET="$(openssl rand -hex 32)" ADMIN_TOKEN="$(openssl rand -hex 24)"
+#   cd infra/deploy/fly/api && fly deploy --config fly.toml
+#
+# One machine only: a Fly volume attaches to one machine, and the SQLite catalog must have one writer.
+
+app = "freetv-api"
+primary_region = "ams"
+
+[build]
+  image = "ghcr.io/freetv/freetv-api:latest"
+
+[env]
+  PORT = "3000"
+  DATA_DIR = "/data"
+  NODE_ENV = "production"
+  IPTV_API_BASE = "https://iptv-org.github.io/api"
+  INGEST_INTERVAL_HOURS = "6"
+  HIDE_NSFW_DEFAULT = "true"
+  # No proxy app on Fly: signing is off, so the api never issues proxied stream URLs.
+  PROXY_ENABLED = "false"
+  EPG_FILE = "/data/epg/guide.xml"
+  PROBE_ENABLED = "true"
+  LOGO_CACHE_ENABLED = "true"
+  LOGO_CACHE_DIR = "/data/logos"
+  LOCAL_BLOCKLIST = "/data/local-blocklist.json"
+  # PUBLIC_URL = "https://tv.example.com"   # set when the public hostname is known
+
+[[mounts]]
+  source = "freetv_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1024mb"

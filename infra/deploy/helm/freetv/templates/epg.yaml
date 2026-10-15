@@ -1,0 +1,43 @@
+{{- if .Values.epg.enabled }}
+{{- $name := include "freetv.component" (dict "root" . "name" "epg") }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "freetv.labels" . | nindent 4 }}
+    app.kubernetes.io/component: epg
+spec:
+  # Recreate: the grabber and the api share the data volume; never run two grabbers at once.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "freetv.selector" . | nindent 6 }}
+      app.kubernetes.io/component: epg
+  template:
+    metadata:
+      labels:
+        {{- include "freetv.selector" . | nindent 8 }}
+        app.kubernetes.io/component: epg
+    spec:
+      containers:
+        - name: epg
+          image: {{ include "freetv.image" (dict "root" . "name" "epg") | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            {{- range $key, $value := .Values.epg.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.epg.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-data
+{{- end }}

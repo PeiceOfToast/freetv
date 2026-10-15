@@ -1,0 +1,17 @@
+{
+  "name": "freetv-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "@types/node": "^22.10.0",
+    "tsx": "4.23.15",
+    "typescript": "^5.7.2"
+  }
+}

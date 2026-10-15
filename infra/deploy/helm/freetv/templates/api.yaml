@@ -1,0 +1,87 @@
+{{- $name := include "freetv.component" (dict "root" . "name" "api") }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "freetv.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  # One replica only: the catalog is SQLite with a single writer. Recreate avoids two pods on one volume.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "freetv.selector" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        {{- include "freetv.selector" . | nindent 8 }}
+        app.kubernetes.io/component: api
+    spec:
+      containers:
+        - name: api
+          image: {{ include "freetv.image" (dict "root" . "name" "api") | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: PORT
+              value: "3000"
+            - name: PUBLIC_URL
+              value: {{ include "freetv.publicUrl" . | quote }}
+            - name: PROXY_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "freetv.secretName" . }}
+                  key: PROXY_SECRET
+            - name: ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "freetv.secretName" . }}
+                  key: ADMIN_TOKEN
+                  optional: true
+            {{- range $key, $value := .Values.api.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 60
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "freetv.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  selector:
+    {{- include "freetv.selector" . | nindent 4 }}
+    app.kubernetes.io/component: api
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http

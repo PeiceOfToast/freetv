@@ -4,7 +4,15 @@
 # Images: each service is built from apps/<svc> and tagged ghcr.io/<owner>/freetv-<svc>:<tag>,
 # so you can either build locally (`docker compose up -d --build`) or pull published
 # multi-arch images (`docker compose pull && docker compose up -d`).
+#
+# Optional profiles (add to COMPOSE_PROFILES in .env):
+#   monitoring  Prometheus + Grafana, Grafana on 127.0.0.1:3002 only. docs/DEPLOY.md "Monitoring".
+#   autoupdate  Watchtower, pulls new GHCR images daily. docs/DEPLOY.md "Automatic updates".
 name: freetv
+
+# Services labelled with this are the only ones Watchtower (profile autoupdate) may restart.
+x-watchtower-labels: &watchtower-labels
+  com.centurylinklabs.watchtower.enable: "true"
 
 services:
   web:
@@ -12,6 +20,7 @@ services:
       context: ./apps/web
     image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-freetv}/freetv-web:${FREETV_TAG:-latest}
     restart: unless-stopped
+    labels: *watchtower-labels
     ports:
       - "80:80"
       - "443:443"
@@ -34,6 +43,7 @@ services:
     image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-freetv}/freetv-api:${FREETV_TAG:-latest}
     restart: unless-stopped
     mem_limit: 1g
+    labels: *watchtower-labels
     environment:
       IPTV_API_BASE: ${IPTV_API_BASE:-https://iptv-org.github.io/api}
       INGEST_INTERVAL_HOURS: ${INGEST_INTERVAL_HOURS:-6}
@@ -44,6 +54,19 @@ services:
       ADMIN_TOKEN: ${ADMIN_TOKEN:-}
       PUBLIC_URL: ${PUBLIC_URL:-}
       EPG_FILE: /data/epg/guide.xml
+      # Stream health prober
+      PROBE_ENABLED: ${PROBE_ENABLED:-true}
+      PROBE_INTERVAL_HOURS: ${PROBE_INTERVAL_HOURS:-6}
+      PROBE_CONCURRENCY: ${PROBE_CONCURRENCY:-8}
+      PROBE_RATE_PER_SECOND: ${PROBE_RATE_PER_SECOND:-5}
+      PROBE_TIMEOUT_MS: ${PROBE_TIMEOUT_MS:-10000}
+      # Logo cache. Explicit defaults: an empty string would not fall back inside the api.
+      LOGO_CACHE_ENABLED: ${LOGO_CACHE_ENABLED:-true}
+      LOGO_CACHE_DIR: ${LOGO_CACHE_DIR:-/data/logos}
+      LOGO_CACHE_MAX_MB: ${LOGO_CACHE_MAX_MB:-500}
+      LOGO_MAX_SIZE: ${LOGO_MAX_SIZE:-512}
+      # Operator blocklist (JSON array of channel ids). See infra/scripts/block-channel.sh.
+      LOCAL_BLOCKLIST: ${LOCAL_BLOCKLIST:-/data/local-blocklist.json}
     volumes:
       - data:/data
 
@@ -53,11 +76,18 @@ services:
       context: ./apps/proxy
     image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-freetv}/freetv-proxy:${FREETV_TAG:-latest}
     restart: unless-stopped
+    labels: *watchtower-labels
     environment:
       PROXY_SECRET: ${PROXY_SECRET:?Set PROXY_SECRET in .env (run infra/scripts/gen-secret.sh)}
       PROXY_PUBLIC_PATH: ${PROXY_PUBLIC_PATH:-/proxy}
       PROXY_MAX_CONCURRENT: ${PROXY_MAX_CONCURRENT:-200}
       PROXY_MAX_BYTES: ${PROXY_MAX_BYTES:-52428800}
+      # Relay limits. The client IP comes from X-Forwarded-For set by Caddy; the proxy port is
+      # not published, so nothing else can reach it to spoof that header.
+      PROXY_RATE_LIMIT_RPS: ${PROXY_RATE_LIMIT_RPS:-20}
+      PROXY_RATE_LIMIT_BURST: ${PROXY_RATE_LIMIT_BURST:-60}
+      PROXY_MAX_CONCURRENT_PER_IP: ${PROXY_MAX_CONCURRENT_PER_IP:-16}
+      PROXY_TRUST_PROXY: ${PROXY_TRUST_PROXY:-true}
 
   epg:
     profiles: ["epg"]
@@ -67,6 +97,7 @@ services:
     restart: unless-stopped
     mem_limit: 2g
     cpus: 2
+    labels: *watchtower-labels
     environment:
       IPTV_API_BASE: ${IPTV_API_BASE:-https://iptv-org.github.io/api}
       EPG_SITES: ${EPG_SITES:-all}
@@ -78,7 +109,66 @@ services:
     volumes:
       - data:/data
 
+  # ---- profile: monitoring ---------------------------------------------------
+  # Prometheus scrapes api:3000/metrics and proxy:3001/metrics on the compose network.
+  # Neither port is published and Caddy does not route /metrics, so Prometheus has no public
+  # endpoint. Grafana is bound to loopback: reach it with `ssh -L 3002:127.0.0.1:3002 host`.
+  prometheus:
+    profiles: ["monitoring"]
+    image: prom/prometheus:v3.5.0
+    restart: unless-stopped
+    mem_limit: 512m
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-30d}
+    volumes:
+      - ./infra/monitoring/prometheus:/etc/prometheus:ro
+      - prometheus_data:/prometheus
+
+  grafana:
+    profiles: ["monitoring"]
+    image: grafana/grafana:11.6.0
+    restart: unless-stopped
+    mem_limit: 512m
+    depends_on:
+      - prometheus
+    ports:
+      - "127.0.0.1:3002:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      # Placeholder default on purpose: compose interpolates every service even when its profile is off, so a
+      # hard `:?` here would break the default stack. update.sh refuses to run with the placeholder when monitoring is on.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-change-me-grafana}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - ./infra/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+
+  # ---- profile: autoupdate ---------------------------------------------------
+  # Watchtower polls GHCR once a day and recreates only containers carrying the label above.
+  # It can only update images that are pulled from a registry. Services built with --build are
+  # ignored or replaced by whatever GHCR has. Use infra/auto-update/ (systemd timer) for those.
+  # Watchtower gets the Docker socket, which is root on the host. Keep this profile opt-in.
+  watchtower:
+    profiles: ["autoupdate"]
+    image: nickfedor/watchtower:latest
+    restart: unless-stopped
+    environment:
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_SCHEDULE: ${WATCHTOWER_SCHEDULE:-0 0 4 * * *} # 6-field cron (seconds first): 04:00 daily
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_ROLLING_RESTART: "true"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
 volumes:
   data:
   caddy_data:
   caddy_config:
+  prometheus_data:
+  grafana_data:

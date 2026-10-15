@@ -2,7 +2,10 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { Transform, pipeline } from "node:stream";
 import type { Agent } from "undici";
 import { DEFAULT_UA, type ProxyConfig } from "./config.js";
+import { clientIp, makeIpHasher } from "./clientip.js";
+import { createMetrics } from "./metrics.js";
 import { isPlaylist, rewritePlaylist } from "./playlist.js";
+import { TokenBucketLimiter } from "./ratelimit.js";
 import { verifySignature } from "./sign.js";
 import { TargetForbiddenError } from "./ssrf.js";
 import { createDispatcher, fetchUpstream, UpstreamError } from "./upstream.js";
@@ -13,16 +16,26 @@ export interface ProxyServer {
   close(): Promise<void>;
 }
 
+type Kind = "playlist" | "segment" | "other";
+
 const CORS_HEADERS = {
   "access-control-allow-origin": "*",
   "access-control-expose-headers": "Content-Length, Content-Range",
 };
 
+const SWEEP_INTERVAL_MS = 60_000;
+
 interface ReqContext {
   method: string;
   path: string;
   host: string;
+  /** Salted hash of the client address. Raw addresses are never logged. */
+  ip: string;
+  kind: Kind;
+  /** Bytes sent to the client. */
   bytes: number;
+  /** Bytes received from upstream. */
+  upstreamBytes: number;
   started: number;
 }
 
@@ -72,18 +85,51 @@ function matchRoute(pathname: string, publicPath: string): [string, string] | nu
   return [parts[1], parts[2]];
 }
 
+/** Best guess before the upstream response is seen. Refined to the real content type once it arrives. */
+function guessKind(u: string): Kind {
+  try {
+    return isPlaylist(undefined, new URL(u)) ? "playlist" : "segment";
+  } catch {
+    return "other";
+  }
+}
+
 export function createProxyServer(config: ProxyConfig): ProxyServer {
   const dispatcher: Agent = createDispatcher(config);
+  const metrics = createMetrics();
+  const hashIp = makeIpHasher();
+  const limiter = config.rateLimitRps > 0 ? new TokenBucketLimiter(config.rateLimitRps, config.rateLimitBurst) : null;
+  const sweeper = limiter ? setInterval(() => limiter.sweep(), SWEEP_INTERVAL_MS) : null;
+  sweeper?.unref();
+
   let inFlight = 0;
+  const perIp = new Map<string, number>();
   const sockets = new Set<import("node:net").Socket>();
+
+  /** Takes one global and one per-IP slot. The returned function releases both, once. */
+  function takeSlot(addr: string): () => void {
+    inFlight++;
+    metrics.active.set(inFlight);
+    perIp.set(addr, (perIp.get(addr) ?? 0) + 1);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      inFlight--;
+      metrics.active.set(inFlight);
+      const n = (perIp.get(addr) ?? 1) - 1;
+      if (n <= 0) perIp.delete(addr);
+      else perIp.set(addr, n);
+    };
+  }
 
   const log = (ctx: ReqContext, status: number) => {
     if (config.logLevel === "silent") return;
     const ms = Date.now() - ctx.started;
-    console.log(`proxy ${ctx.method} ${status} ${ctx.host} bytes=${ctx.bytes} ms=${ms}`);
+    console.log(`proxy ${ctx.method} ${status} ${ctx.host} bytes=${ctx.bytes} ms=${ms} ip=${ctx.ip} kind=${ctx.kind}`);
   };
 
-  async function handle(req: IncomingMessage, res: ServerResponse, ctx: ReqContext): Promise<void> {
+  async function handle(req: IncomingMessage, res: ServerResponse, ctx: ReqContext, addr: string): Promise<void> {
     const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
     ctx.path = pathname;
 
@@ -105,6 +151,16 @@ export function createProxyServer(config: ProxyConfig): ProxyServer {
       res.writeHead(200, { ...CORS_HEADERS, "content-type": "text/plain; charset=utf-8", "content-length": "2" });
       res.end("ok"); return;
     }
+    if (pathname === "/metrics") {
+      const body = metrics.render();
+      ctx.bytes = Buffer.byteLength(body);
+      res.writeHead(200, {
+        "content-type": "text/plain; version=0.0.4; charset=utf-8",
+        "content-length": String(ctx.bytes),
+        "cache-control": "no-store",
+      });
+      res.end(body); return;
+    }
 
     const route = matchRoute(pathname, config.publicPath);
     if (!route) return json(res, 404, { error: "not found" }, ctx);
@@ -116,6 +172,17 @@ export function createProxyServer(config: ProxyConfig): ProxyServer {
 
     const payload = decodePayload(payloadB64);
     if (!payload) return json(res, 400, { error: "invalid payload" }, ctx);
+    ctx.kind = guessKind(payload.u);
+
+    // Rate limit after the signature check, so only requests the api actually issued consume tokens.
+    if (limiter) {
+      const decision = limiter.take(addr);
+      if (!decision.allowed) {
+        metrics.rateLimited.inc();
+        res.setHeader("retry-after", String(decision.retryAfterSec));
+        return json(res, 429, { error: "rate limited" }, ctx);
+      }
+    }
 
     let target: URL;
     try {
@@ -139,13 +206,15 @@ export function createProxyServer(config: ProxyConfig): ProxyServer {
       }
     }
 
+    if (config.maxConcurrentPerIp > 0 && (perIp.get(addr) ?? 0) >= config.maxConcurrentPerIp) {
+      res.setHeader("retry-after", "2");
+      return json(res, 429, { error: "too many concurrent requests" }, ctx);
+    }
     if (inFlight >= config.maxConcurrent) {
       res.setHeader("retry-after", "2");
       return json(res, 503, { error: "too many concurrent requests" }, ctx);
     }
-    inFlight++;
-    let released = false;
-    const release = () => { if (!released) { released = true; inFlight--; } };
+    const release = takeSlot(addr);
 
     const ac = new AbortController();
     res.once("close", () => { release(); ac.abort(); });
@@ -160,22 +229,29 @@ export function createProxyServer(config: ProxyConfig): ProxyServer {
       });
     } catch (err) {
       if (ac.signal.aborted || res.destroyed) return;
-      if (isForbidden(err)) return json(res, 403, { error: "target not allowed" }, ctx);
+      if (isForbidden(err)) {
+        metrics.upstreamErrors.inc({ reason: "forbidden" });
+        return json(res, 403, { error: "target not allowed" }, ctx);
+      }
+      metrics.upstreamErrors.inc({ reason: "unreachable" });
       const host = err instanceof UpstreamError ? err.hostname : target.hostname;
       return json(res, 502, { error: `upstream unreachable (${host})` }, ctx);
     }
 
     if (up.statusCode < 200 || up.statusCode >= 300) {
       up.body.dump().catch(() => {});
+      metrics.upstreamErrors.inc({ reason: "bad_status" });
       return json(res, 502, { error: `upstream responded ${up.statusCode}` }, ctx);
     }
 
     const contentType = headerString(up.headers["content-type"]);
     const contentLength = headerString(up.headers["content-length"]);
+    ctx.kind = isPlaylist(contentType, up.url) ? "playlist" : "segment";
 
-    if (isPlaylist(contentType, up.url)) {
+    if (ctx.kind === "playlist") {
       if (contentLength && Number(contentLength) > config.maxPlaylistBytes) {
         up.body.dump().catch(() => {});
+        metrics.upstreamErrors.inc({ reason: "too_large" });
         return json(res, 413, { error: "playlist too large" }, ctx);
       }
       let text: string;
@@ -184,10 +260,13 @@ export function createProxyServer(config: ProxyConfig): ProxyServer {
       } catch (err) {
         if (ac.signal.aborted || res.destroyed) return;
         if ((err as { code?: string }).code === "EPLAYLISTTOOLARGE") {
+          metrics.upstreamErrors.inc({ reason: "too_large" });
           return json(res, 413, { error: "playlist too large" }, ctx);
         }
+        metrics.upstreamErrors.inc({ reason: "read" });
         return json(res, 502, { error: `upstream unreachable (${up.url.hostname})` }, ctx);
       }
+      ctx.upstreamBytes += Buffer.byteLength(text);
       const out = rewritePlaylist(text, up.url, {
         secret: config.secret,
         publicPath: config.publicPath,
@@ -207,6 +286,7 @@ export function createProxyServer(config: ProxyConfig): ProxyServer {
     // Binary passthrough (segments, keys, init sections, anything else).
     if (contentLength && Number(contentLength) > config.maxBytes) {
       up.body.dump().catch(() => {});
+      metrics.upstreamErrors.inc({ reason: "too_large" });
       return json(res, 413, { error: "response too large" }, ctx);
     }
     const headers: Record<string, string> = {
@@ -222,25 +302,48 @@ export function createProxyServer(config: ProxyConfig): ProxyServer {
     const counter = new Transform({
       transform(chunk: Buffer, _enc, cb) {
         ctx.bytes += chunk.length;
+        ctx.upstreamBytes += chunk.length;
         if (ctx.bytes > config.maxBytes) return cb(Object.assign(new Error("too large"), { code: "ETOOLARGE" }));
         cb(null, chunk);
       },
     });
     // pipeline destroys every stream on error: an over-cap or aborted transfer just drops the socket.
-    pipeline(up.body, counter, res, () => { /* errors are expected on client disconnect or cap */ });
+    pipeline(up.body, counter, res, (err) => {
+      // Client disconnects are expected; only the cap is worth counting.
+      if ((err as { code?: string } | undefined)?.code === "ETOOLARGE") metrics.upstreamErrors.inc({ reason: "too_large" });
+    });
   }
 
   const server = createServer((req, res) => {
+    const addr = clientIp({
+      forwardedFor: req.headers["x-forwarded-for"],
+      socketAddress: req.socket.remoteAddress,
+      trustProxy: config.trustProxy,
+    });
     const ctx: ReqContext = {
       method: req.method ?? "-",
       path: req.url ?? "/",
       host: "-",
+      ip: hashIp(addr),
+      kind: "other",
       bytes: 0,
+      upstreamBytes: 0,
       started: Date.now(),
     };
-    res.once("finish", () => log(ctx, res.statusCode));
-    res.once("close", () => { if (!res.writableFinished) log(ctx, res.statusCode); });
-    handle(req, res, ctx).catch((err) => {
+    let done = false;
+    // Runs once: on finish for normal responses, on close for aborted ones.
+    const finish = () => {
+      if (done) return;
+      done = true;
+      metrics.requests.inc({ kind: ctx.kind, status: String(res.statusCode) });
+      metrics.duration.observe((Date.now() - ctx.started) / 1000);
+      metrics.bytes.inc({ direction: "client" }, ctx.bytes);
+      metrics.bytes.inc({ direction: "upstream" }, ctx.upstreamBytes);
+      log(ctx, res.statusCode);
+    };
+    res.once("finish", finish);
+    res.once("close", finish);
+    handle(req, res, ctx, addr).catch((err) => {
       if (!res.headersSent) json(res, 500, { error: "internal error" }, ctx);
       else res.destroy();
       if (config.logLevel !== "silent") console.error("proxy internal error", (err as Error).message);
@@ -256,6 +359,7 @@ export function createProxyServer(config: ProxyConfig): ProxyServer {
     server,
     close: () =>
       new Promise<void>((resolve) => {
+        if (sweeper) clearInterval(sweeper);
         server.close(() => resolve());
         server.closeAllConnections();
         dispatcher.close().catch(() => {});

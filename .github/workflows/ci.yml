@@ -110,3 +110,44 @@ jobs:
           provenance: false
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  e2e:
+    name: e2e (playwright)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            apps/api/package-lock.json
+            apps/web/package-lock.json
+            apps/proxy/package-lock.json
+            e2e/package-lock.json
+      - name: Install api, web, proxy and e2e
+        run: |
+          (cd apps/api && npm ci)
+          (cd apps/web && npm ci)
+          (cd apps/proxy && npm ci)
+          (cd e2e && npm ci)
+      - name: Build web
+        run: npm run build
+        working-directory: apps/web
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: e2e
+      # Fully offline: the api gets a fixture catalog and a fake HLS origin on loopback.
+      - name: Run e2e
+        run: npm test
+        working-directory: e2e
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: |
+            e2e/report
+            e2e/test-results
+          retention-days: 7

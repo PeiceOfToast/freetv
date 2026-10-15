@@ -1,0 +1,88 @@
+#cloud-config
+# FreeTV on a Hetzner Cloud server with Ubuntu 24.04 (cax* Arm or cx* x86; the stack is multi-arch).
+# UNTESTED. Same bootstrap as infra/deploy/oracle/cloud-init.yaml, with the host firewall handled by
+# ufw instead of Oracle's iptables REJECT rule. Hetzner's stock Ubuntu image has no such rule.
+#
+# Before creating the server, replace the two placeholders below. See infra/deploy/hetzner/README.md.
+#   __REPO_URL__  git URL of your FreeTV fork or the upstream repo, e.g. https://github.com/you/freetv.git
+#   __DOMAIN__    public hostname, e.g. tv.example.com. Leave the value empty for plain HTTP on the IP.
+#
+# Runs once on first boot. Progress: /var/log/freetv-bootstrap.log
+
+write_files:
+  - path: /usr/local/sbin/freetv-bootstrap.sh
+    permissions: "0755"
+    owner: root:root
+    content: |
+      #!/usr/bin/env bash
+      # Idempotent where practical: re-running skips clone and .env creation if already done.
+      set -euo pipefail
+      exec >> /var/log/freetv-bootstrap.log 2>&1
+
+      REPO_URL="__REPO_URL__"
+      DOMAIN="__DOMAIN__"
+      export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a
+
+      if [[ "$REPO_URL" == __* ]]; then
+        echo "REPO_URL placeholder was not replaced; edit cloud-init.yaml" >&2
+        exit 1
+      fi
+      if [[ "$DOMAIN" == __* ]]; then
+        echo "DOMAIN placeholder was not replaced; using plain HTTP on port 80"
+        DOMAIN=""
+      fi
+
+      echo "== packages"
+      apt-get update
+      apt-get install -y ca-certificates curl git openssl ufw
+
+      echo "== host firewall (ufw): SSH, HTTP, HTTPS, HTTP/3"
+      # Allow SSH before enabling, or the session that enables ufw can lock you out.
+      ufw allow OpenSSH
+      ufw allow 80/tcp
+      ufw allow 443/tcp
+      ufw allow 443/udp
+      ufw --force enable
+      # Docker writes its own iptables rules and publishes ports past ufw. Only web publishes ports
+      # (80, 443), so that is the intended exposure. api, proxy and epg have no published ports.
+
+      echo "== docker engine and compose plugin (Docker's apt repository)"
+      if ! command -v docker >/dev/null 2>&1; then
+        install -m 0755 -d /etc/apt/keyrings
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+        chmod a+r /etc/apt/keyrings/docker.asc
+        . /etc/os-release
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" \
+          > /etc/apt/sources.list.d/docker.list
+        apt-get update
+        apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+      fi
+      systemctl enable --now docker
+
+      echo "== service user"
+      id freetv >/dev/null 2>&1 || useradd --create-home --shell /bin/bash freetv
+      usermod -aG docker freetv
+
+      echo "== code"
+      if [[ ! -d /opt/freetv/.git ]]; then
+        git clone "$REPO_URL" /opt/freetv
+      fi
+      cd /opt/freetv
+
+      echo "== configuration"
+      if [[ ! -f .env ]]; then
+        cp .env.example .env
+        secret="$(openssl rand -hex 32)"
+        sed -i "s|^PROXY_SECRET=.*|PROXY_SECRET=${secret}|" .env
+        sed -i "s|^DOMAIN=.*|DOMAIN=${DOMAIN}|" .env
+      fi
+      chmod 600 .env
+      chown -R freetv:freetv /opt/freetv
+
+      echo "== start the stack (built on this host; see README for the pull-from-GHCR variant)"
+      docker compose up -d --build
+      docker compose ps
+      echo "== done"
+
+runcmd:
+  - [/usr/local/sbin/freetv-bootstrap.sh]

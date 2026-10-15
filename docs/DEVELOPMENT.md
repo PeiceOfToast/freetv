@@ -73,7 +73,7 @@ the clock from `src/epg/time.ts` so tests can freeze it. Keep fixtures small; re
 Python snippet in `docs/notes/api-ingest.md` if the upstream shape changes.
 
 UI checks are done with Playwright screenshots (see `docs/notes/web-devices.md` for the audit
-script); adding Playwright e2e tests to CI is on the roadmap.
+script). End-to-end tests run the real api, proxy and web build against the fixture catalog and a fake HLS origin, with no internet: after `npm run build` in `apps/web`, run `cd e2e && npm ci && npx playwright install --with-deps chromium && npm test` (`npm run test:headed` to watch). See `docs/notes/e2e.md`.
 
 ## Conventions
 

@@ -67,6 +67,70 @@ on the next channel open); this is harmless.
 **Turn the relay off/on.** Edit `COMPOSE_PROFILES` (remove or add `proxy`) and `PROXY_ENABLED`,
 then `docker compose up -d --remove-orphans`.
 
+### Stream health prober
+
+The api checks stream playlists in the background. One pass runs two minutes after start, then every
+`PROBE_INTERVAL_HOURS` (default 6). Each check fetches the playlist, reads only its first few KB, and follows
+redirects. A stream is marked **offline** after two consecutive failures and back **online** after one success.
+Failing streams are retried first, and streams that have failed ten times in a row are only checked once a day.
+
+| Knob | Default | Effect |
+|------|---------|--------|
+| `PROBE_ENABLED` | `true` | `false` stops probing. Stream status then stays at its last known value. |
+| `PROBE_INTERVAL_HOURS` | `6` | How often a pass starts. |
+| `PROBE_RATE_PER_SECOND` | `5` | Global cap. About 16k streams at 5/s take roughly 53 minutes per pass, so the default interval has room. |
+| `PROBE_CONCURRENCY` | `8` | In-flight checks. Raise it together with the rate, not on its own. |
+| `PROBE_TIMEOUT_MS` | `10000` | Per-check timeout. |
+
+**What to watch:** the *Stream probe age* and *Streams online* panels in Grafana, or `lastProbe` / `health` in
+`GET /api/meta`. If a pass takes longer than the interval, raise `PROBE_INTERVAL_HOURS`. Raising the rate shortens passes too, but
+it adds requests to the stream hosts, so check that they tolerate it first. If the online
+count falls across many channels at once, check whether your server's IP is being blocked before believing the
+streams have died: open one known stream from the server with `curl`. A probe pass can be triggered now with
+`POST /api/admin/probe` (admin token).
+
+### Logo cache
+
+With `LOGO_CACHE_ENABLED=true` (default) channel logos are served from `/logo/<id>` on your own domain. The
+first request fetches the upstream image, resizes it, and stores it under `LOGO_CACHE_DIR` (default
+`/data/logos` in the data volume). Failed fetches are remembered for six hours. The cache is evicted
+least-recently-used once it exceeds `LOGO_CACHE_MAX_MB` (default 500). `LOGO_MAX_SIZE` (default 512) caps the
+largest edge served.
+
+- Disk: check `logos.bytes` in `GET /api/admin/status` (admin token) against `LOGO_CACHE_MAX_MB`. Eviction keeps
+  the cache under the limit, so the figure should not climb past it.
+- A 404 for one channel usually means the upstream logo is missing or unreachable. Clients fall back to initials.
+- If every logo shows as a broken image, the edge is not routing `/logo/*` to the api. The Caddy config must
+  contain a `handle /logo/*` block that proxies to `api:3000`. Set `LOGO_CACHE_ENABLED=false` to fall back to the
+  upstream URLs while you fix it.
+
+### Relay rate limits
+
+The relay limits each client IP. A request over budget gets `429` with a `Retry-After` header and is counted in
+`freetv_proxy_rate_limited_total`.
+
+| Knob | Default | Effect |
+|------|---------|--------|
+| `PROXY_RATE_LIMIT_RPS` | `20` | Sustained requests per second per IP. A viewer fetches a segment every 2 to 6 s, so this covers several tabs. |
+| `PROXY_RATE_LIMIT_BURST` | `60` | Short bursts above the sustained rate, for example when a player starts. |
+| `PROXY_MAX_CONCURRENT_PER_IP` | `16` | Open upstream connections per IP. `0` disables the cap. |
+| `PROXY_MAX_CONCURRENT` | `200` | Open upstream connections for the whole relay. |
+| `PROXY_TRUST_PROXY` | `true` | Take the client IP from `X-Forwarded-For`, which Caddy sets. Keep it `true` in compose. With `false` every viewer appears as Caddy's address and shares one budget. |
+
+Requests are only counted after their signature is checked, so random traffic cannot use up the budget.
+
+**What to watch:** *Rate-limited requests*, *Relay in-flight requests* and *Relay bytes* in Grafana.
+A few `429`s per hour is normal. A steady rate usually means a whole office or mobile carrier sits behind one IP,
+which calls for a higher `PROXY_RATE_LIMIT_RPS` and `PROXY_MAX_CONCURRENT_PER_IP`. Raising the limits also raises
+the egress cost, which is the real expense of the relay (see Capacity above).
+
+### Blocking a channel
+
+`infra/scripts/block-channel.sh <channel-id>` hides a channel on this instance, on top of iptv-org's own blocklist.
+It appends the id to the api's `LOCAL_BLOCKLIST` file in the data volume (a JSON array) and, if `ADMIN_TOKEN` is set
+in `.env`, asks the api to re-ingest so the change applies at once. Without the token the change applies at the
+next scheduled ingest. Running it again for the same id changes nothing. Ids are letters, digits and `._@:+-` only.
+
 ## Backups
 
 The only state worth keeping is the `data` volume (catalog is rebuilt from the internet anyway, but
@@ -119,3 +183,18 @@ video, so watch your provider's egress allowance if the site gets popular (Oracl
 A free uptime monitor hitting `https://$DOMAIN/api/health` every few minutes catches most outages.
 For something richer, `GET /api/meta` is cheap and exposes the freshness numbers above; alert when
 `lastIngest` is older than 24 h or `programmes` drops to 0 after having been populated.
+
+### Grafana dashboard (monitoring profile)
+
+Enable the profile as described in [DEPLOY.md](DEPLOY.md#monitoring-optional). The **FreeTV** dashboard has four
+groups of panels, read top to bottom:
+
+1. **Catalog:** channel and stream counts, and programme rows.
+2. **Freshness:** seconds since the last catalog ingest, EPG import and probe pass. Orange and red thresholds are
+   set for the default intervals. A red EPG panel usually means the `epg` container has stopped or failed.
+3. **Relay:** request rate by status, bytes by direction, rate-limited requests, in-flight requests, upstream errors
+   and p95 latency. These come from the proxy's `/metrics`.
+4. **API:** p95 latency and request rate by status.
+
+Prometheus keeps 30 days by default. Panels are read-only in the UI (provisioned from the repository), so change the
+JSON in `infra/monitoring/grafana/dashboards/` and restart Grafana to change them.

@@ -1,0 +1,25 @@
+# Prometheus for the optional `monitoring` compose profile (docs/DEPLOY.md "Monitoring").
+# Mounted read-only at /etc/prometheus. Targets are compose service names on the internal network;
+# neither port is published to the host.
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+  scrape_timeout: 10s
+
+scrape_configs:
+  - job_name: freetv-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:3000"]
+        labels:
+          service: api
+
+  # The proxy's /metrics is part of the relay limits work (docs/API.md does not list it yet).
+  # Until the proxy serves it, this target shows as down and the relay panels stay empty.
+  # That is expected when the proxy profile is off too.
+  - job_name: freetv-proxy
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["proxy:3001"]
+        labels:
+          service: proxy

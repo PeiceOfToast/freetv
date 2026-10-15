@@ -1,0 +1,28 @@
+# Fly.io app for the FreeTV web edge (SPA + reverse proxy to the api app over Fly's private network).
+# UNTESTED. Replace the app name (must be globally unique) and the api app name below.
+# Deploy: cd infra/deploy/fly/web && fly launch --no-deploy --config fly.toml && fly deploy
+
+app = "freetv-web"
+primary_region = "ams"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # Fly terminates TLS at the edge, so Caddy serves plain HTTP on 80.
+  SITE_ADDRESS = ":80"
+  # <api app>.internal:<api port>. Private DNS, not public.
+  API_UPSTREAM = "freetv-api.internal:3000"
+  # No proxy app: the /proxy route returns 502 and the player falls back to "unavailable".
+  # PROXY_UPSTREAM = "freetv-proxy.internal:3001"
+
+[http_service]
+  internal_port = 80
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

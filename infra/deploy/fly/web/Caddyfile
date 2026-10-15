@@ -1,0 +1,85 @@
+# GENERATED COPY for the Fly web app. Source: infra/caddy/Caddyfile.
+# Differences: upstreams come from API_UPSTREAM / PROXY_UPSTREAM (Fly private DNS names), and /logo/* is routed.
+# Regenerate or re-diff when infra/caddy/Caddyfile changes. CI does not check this copy.
+# FreeTV edge: serves the SPA and reverse-proxies the API and the HLS relay.
+#
+# Bind-mounted into the `web` container at /etc/caddy by docker-compose.yml, so edits
+# take effect on `docker compose restart web`. apps/web/Caddyfile is the copy baked into
+# the image; CI fails if the two drift apart.
+#
+# SITE_ADDRESS is computed in docker-compose.yml: DOMAIN when set (automatic HTTPS),
+# otherwise ":80" (plain HTTP). The default below only matters for standalone runs.
+
+{$SITE_ADDRESS::80} {
+	root * /srv
+
+	header {
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), fullscreen=(self)"
+		# Deliberately narrow: only framing, media and connections are restricted. Stream
+		# URLs point at arbitrary hosts and hls.js plays through blob: MediaSource URLs, so
+		# media-src and connect-src must stay open. No script-src: the SPA has no inline scripts,
+		# but a strict script policy would be fragile across hls.js worker blobs.
+		Content-Security-Policy "frame-ancestors 'self'; media-src * blob:; connect-src *"
+		-Server
+	}
+
+	# JSON API. Compressed; no prefix stripping (api serves /api/* itself).
+	handle /api/* {
+		encode zstd gzip
+		reverse_proxy {$API_UPSTREAM:api:3000}
+	}
+
+	# Channel logos (LOGO_CACHE_ENABLED=true returns /logo/<id>). Not under /api, so route explicitly.
+	handle /logo/* {
+		reverse_proxy {$API_UPSTREAM:api:3000}
+	}
+
+	# HLS relay. Passes the path through unchanged (proxy serves /proxy/*).
+	# Not compressed (media) and flushed immediately so live segments are not held back.
+	# If the proxy profile is disabled, Caddy answers 502 because `proxy` does not resolve;
+	# the UI treats any failure on /proxy as "proxy unavailable".
+	handle /proxy/* {
+		reverse_proxy {$PROXY_UPSTREAM:proxy:3001} {
+			flush_interval -1
+		}
+	}
+
+	# Hashed build output: cache forever. Missing files 404 instead of falling back to index.html.
+	handle /assets/* {
+		encode zstd gzip
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	# Android TV app (Trusted Web Activity) verification. Drop your assetlinks.json into
+	# infra/caddy/ (see apps/tv/README.md); 404 until then.
+	handle /.well-known/assetlinks.json {
+		root * /etc/caddy
+		rewrite * /assetlinks.json
+		header Content-Type application/json
+		header Cache-Control "public, max-age=3600"
+		file_server
+	}
+
+	# PWA manifest / service worker: never cache the SW, correct manifest type.
+	handle /sw.js {
+		header Cache-Control "no-cache"
+		file_server
+	}
+	handle /manifest.webmanifest {
+		header Content-Type application/manifest+json
+		header Cache-Control "no-cache"
+		file_server
+	}
+
+	# Everything else: static files, then the SPA fallback. index.html and deep links must
+	# never be cached so a redeploy is picked up immediately.
+	handle {
+		encode zstd gzip
+		header Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}

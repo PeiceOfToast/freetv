@@ -1,0 +1,16 @@
+# Shared data volume for api (catalog, logos, guide reader) and epg (guide writer).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-data
+  labels:
+    {{- include "freetv.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.storage.accessMode }}
+  {{- with .Values.storage.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.size }}

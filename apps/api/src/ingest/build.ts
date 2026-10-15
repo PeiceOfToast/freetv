@@ -495,7 +495,8 @@ export function buildCatalog(db: Db, rawDir: string, now = Math.floor(Date.now()
 
     // Re-apply stream health from the prober's URL-keyed history onto the rebuilt streams rows.
     db.prepare(
-      "UPDATE streams SET status = (SELECT h.status FROM stream_health h WHERE h.url = streams.url), last_checked = (SELECT h.last_checked FROM stream_health h WHERE h.url = streams.url) WHERE url IN (SELECT url FROM stream_health)",
+      // Hysteresis: a single failure on a never-online stream is "pending", published as NULL (unknown).
+      "UPDATE streams SET status = (SELECT CASE WHEN h.status = 'offline' AND h.fail_count < 2 AND h.last_online IS NULL THEN NULL ELSE h.status END FROM stream_health h WHERE h.url = streams.url), last_checked = (SELECT h.last_checked FROM stream_health h WHERE h.url = streams.url) WHERE url IN (SELECT url FROM stream_health)",
     ).run();
     db.prepare("UPDATE channels SET online_count = (SELECT COUNT(*) FROM streams s WHERE s.channel = channels.id AND s.status = 'online')").run();
 

@@ -89,11 +89,11 @@ Streams are ordered for playback: known-online first, then never-probed, then kn
 
 ## Stream health (prober)
 
-A background job in `api` probes stream playlists (HTTP GET of the m3u8 with the stream's UA/Referer, following redirects, reading only the first few KB) at `PROBE_RATE_PER_SECOND`, cycling through all streams every `PROBE_INTERVAL_HOURS`, most-popular/most-recently-failed first. Results go to `stream_health` (keyed by URL, survives ingest) and are mirrored onto `streams.status`/`last_checked` and `channels.online_count`. Status flips to `offline` only after 2 consecutive failures and back to `online` after 1 success. `POST /api/admin/probe` runs a pass now. `GET /api/meta` gains `"health": { "probed": 12000, "online": 8000, "lastProbe": 1760500000 }`.
+A background job in `api` probes stream playlists (HTTP GET of the m3u8 with the stream's UA/Referer, following redirects, reading at most 64 KB; HLS playlists and DASH MPDs count as online) at `PROBE_RATE_PER_SECOND`, cycling through all streams every `PROBE_INTERVAL_HOURS`: never-probed first, then recent failures to confirm, then oldest checks. Streams that failed 10+ times in a row are re-checked once a day. Results go to `stream_health` (keyed by URL, survives ingest) and are mirrored onto `streams.status`/`last_checked` and `channels.online_count`. Status flips to `offline` only after 2 consecutive failures and back to `online` after 1 success. `POST /api/admin/probe` runs a pass now. `GET /api/meta` gains `"health": { "probed": 12000, "online": 8000, "lastProbe": 1760500000 }`.
 
 ## Logos
 
-`GET /logo/:id` (`:id` = channel id, optional `?s=64|128|256|512` max edge, default 256) serves the channel's logo from a disk cache (`LOGO_CACHE_DIR`), fetching and resizing on first request (PNG/WebP; SVG passed through), with `Cache-Control: public, max-age=604800, immutable`-ish and ETag. 404 when the channel has no logo; a 1×1 transparent PNG is NOT returned (clients fall back to initials). When `LOGO_CACHE_ENABLED=true` the `logo` field in all channel responses is `/logo/<id>` instead of the upstream URL.
+`GET /logo/:id` (`:id` = channel id, optional `?s=64|128|256|512` max edge, default 256) serves the channel's logo from a disk cache (`LOGO_CACHE_DIR`), fetching and resizing on first request (PNG/WebP; SVG passed through), with `Cache-Control: public, max-age=604800, stale-while-revalidate=86400` and ETag. 404 when the channel has no logo; a 1×1 transparent PNG is NOT returned (clients fall back to initials). When `LOGO_CACHE_ENABLED=true` the `logo` field in all channel responses is `/logo/<id>` instead of the upstream URL.
 
 ## `GET /api/channels/:id/epg?from=<ts>&to=<ts>`
 Defaults: `from` = now − 2 h, `to` = now + 24 h. Max window 7 days.

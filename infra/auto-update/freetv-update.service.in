@@ -1,0 +1,21 @@
+# Template rendered by infra/auto-update/install.sh (placeholders in @...@).
+# Runs infra/scripts/update.sh as the service user, once per timer firing.
+# Logs: journalctl -u freetv-update.service
+[Unit]
+Description=FreeTV update (git pull, pull or build images, restart)
+Documentation=file:@FREETV_DIR@/docs/DEPLOY.md
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=@FREETV_USER@
+Group=@FREETV_USER@
+WorkingDirectory=@FREETV_DIR@
+# 1 = always build from this checkout (hosts that deploy with --build). 0 = pull GHCR images.
+Environment=FREETV_BUILD=@FREETV_BUILD@
+ExecStart=@FREETV_DIR@/infra/scripts/update.sh
+# Image builds on a small host can take a long time.
+TimeoutStartSec=2h
+Nice=10

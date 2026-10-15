@@ -1,0 +1,13 @@
+# Weekly, Sunday 04:00 server local time. Persistent=true runs a missed firing after downtime.
+# RandomizedDelaySec spreads load if several instances share a provider.
+[Unit]
+Description=Weekly FreeTV update
+
+[Timer]
+OnCalendar=Sun *-*-* 04:00:00
+RandomizedDelaySec=30min
+Persistent=true
+Unit=freetv-update.service
+
+[Install]
+WantedBy=timers.target
