@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, type Meta } from "@/lib/api";
 
 const REPO = "https://github.com/iptv-org/iptv";
+const FREETV_REPO = "https://github.com/PeiceOfToast/freetv";
 
 export default function AboutPage() {
   const [meta, setMeta] = useState<Meta | null>(null);
@@ -61,6 +62,10 @@ export default function AboutPage() {
           Everything here is open source under the MIT license. Clone the repository, run <code>docker compose up -d</code>,
           point a domain at it and you have your own copy, guide and all. The README covers hosting it for free on an
           Oracle Cloud VM.
+        </p>
+        <p className="text-zinc-600 dark:text-zinc-300 leading-relaxed">
+          Source code: <a className="underline" href={FREETV_REPO}>github.com/PeiceOfToast/freetv</a>. To get your own
+          copy, run <code>git clone {FREETV_REPO}.git</code>.
         </p>
       </section>
 
