@@ -24,6 +24,27 @@ docker compose up -d --build                                   # then open http:
 
 Set `DOMAIN=tv.example.com` in `.env` for automatic HTTPS. Hosting guide: [docs/DEPLOY.md](docs/DEPLOY.md).
 
+## What's in the box
+
+| Path | What it is |
+| --- | --- |
+| `apps/api` | Node/TypeScript (Fastify, SQLite) catalog API: iptv-org ingest, stream health prober, logo cache, EPG import, M3U/XMLTV export, Prometheus metrics, `/admin` |
+| `apps/web` | React + Vite PWA, served by Caddy (automatic HTTPS when `DOMAIN` is set) |
+| `apps/proxy` | Optional HLS relay with signed URLs and an SSRF guard (off by default) |
+| `apps/epg` | Optional container that builds the TV guide (`guide.xml`) with iptv-org/epg |
+| `apps/tv` | Templates for packaging the web app for Android TV, Tizen and webOS |
+| `infra/` | Caddy config, monitoring, cloud-init/Fly/Helm deploy files, ops scripts |
+| `e2e/` | Offline Playwright tests |
+
+Caddy (in the `web` container) is the only public service. It routes `/api/*` and `/logo/*` to the API
+and `/proxy/*` to the relay. The API and relay share `PROXY_SECRET` to sign and verify relay URLs.
+
+## Requirements
+
+Docker with Compose v2 for deployment. Node.js 22 for development.
+The optional `epg` profile is heavy (up to 4 GB RAM and long grab times). For a first test, set `EPG_SITES`
+to a short list or remove `epg` from `COMPOSE_PROFILES` in `.env`.
+
 ## How to watch
 
 A channel can be watched three ways. Which one a viewer gets depends on the stream.
@@ -59,6 +80,19 @@ cd apps/api && npm i && npm run ingest && npm run dev      # API on :3000
 cd apps/web && npm i && npm run dev                        # UI on :5173 (proxies /api)
 cd apps/proxy && npm i && npm run dev                      # relay on :3001
 ```
+
+## Tests
+
+```
+cd apps/api && npm run typecheck && npm test      # same for apps/proxy
+cd apps/web && npm run build                      # strict tsc + vite
+cd e2e && npm ci && npx playwright install --with-deps chromium && npm test   # build apps/web first
+```
+
+## Contributing, security, license
+
+[CONTRIBUTING](CONTRIBUTING.md) · [SECURITY](SECURITY.md) · [CHANGELOG](CHANGELOG.md).
+FreeTV is open source under the [MIT License](LICENSE).
 
 ## Legal
 

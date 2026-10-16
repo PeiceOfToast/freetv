@@ -9,3 +9,5 @@ data/
 .data/
 *.tsbuildinfo
 infra/caddy/assetlinks.json
+
+freetv-history.bundle
