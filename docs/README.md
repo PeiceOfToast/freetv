@@ -30,6 +30,7 @@ Start here. The documents are ordered the way a new operator or contributor shou
 | [DATA.md](DATA.md) | The iptv-org datasets we ingest, their shapes, and how we derive our catalog. |
 | [DECISIONS.md](DECISIONS.md) | Why things are the way they are: the design decisions and their trade-offs. |
 | [ROADMAP.md](ROADMAP.md) | What we would build next, roughly in order of value. |
+| [REVIEW-2026-10-16.md](REVIEW-2026-10-16.md) | Independent pre-launch review: prioritised checks and fixes with status. |
 | [PLAN.md](PLAN.md) | The original project plan and the status of each milestone. |
 | [PARALLEL-WORK.md](PARALLEL-WORK.md) | How the codebase is split so several people/agents can work at once. |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) · [../SECURITY.md](../SECURITY.md) · [../CHANGELOG.md](../CHANGELOG.md) | Contribution rules, reporting vulnerabilities, release history. |
