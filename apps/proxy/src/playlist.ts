@@ -5,6 +5,8 @@ export interface RewriteOptions {
   publicPath: string;
   ua?: string | null;
   r?: string | null;
+  /** The parent's exp (unix seconds). Children carry it unchanged, so a session cannot extend itself. */
+  exp: number;
 }
 
 // Tags whose URI="..." attribute points at another resource that must go through the proxy.
@@ -25,7 +27,7 @@ export function rewritePlaylist(text: string, base: URL, opts: RewriteOptions): 
       return null;
     }
     if (abs.protocol !== "http:" && abs.protocol !== "https:") return null;
-    return makeProxyUrl(opts.secret, opts.publicPath, abs.toString(), opts.ua, opts.r);
+    return makeProxyUrl(opts.secret, opts.publicPath, abs.toString(), opts.ua, opts.r, opts.exp);
   };
 
   return text

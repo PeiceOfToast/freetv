@@ -133,7 +133,10 @@ export async function startProxy(overrides: Partial<ProxyConfig> = {}): Promise<
   return { proxy, origin: `http://127.0.0.1:${port}` };
 }
 
-/** Signed path (with the public prefix) for a target, as the api would issue it. */
-export function signed(u: string, ua?: string | null, r?: string | null): string {
-  return makeProxyUrl(SECRET, PUBLIC_PATH, u, ua, r);
+/** Unix seconds now. */
+export const nowSec = () => Math.floor(Date.now() / 1000);
+
+/** Signed path (with the public prefix) for a target, as the api would issue it (exp defaults to +24 h). */
+export function signed(u: string, ua?: string | null, r?: string | null, exp: number = nowSec() + 86400): string {
+  return makeProxyUrl(SECRET, PUBLIC_PATH, u, ua, r, exp);
 }

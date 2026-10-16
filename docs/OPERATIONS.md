@@ -34,17 +34,19 @@ docker compose logs -f --tail=200 proxy     # one line per relayed request: stat
 docker compose logs -f --tail=200 web       # Caddy access/TLS
 ```
 
-Docker's default json-file driver does not rotate logs. Add to `/etc/docker/daemon.json` and
-restart Docker:
+Every container logs with the json-file driver and rotates at 20 MB, keeping five files
+(`x-logging` in `docker-compose.yml`, profiles included). The Oracle bootstrap also writes the same limits to
+`/etc/docker/daemon.json`, which covers containers started outside compose.
 
-```json
-{ "log-driver": "json-file", "log-opts": { "max-size": "20m", "max-file": "5" } }
-```
+`LOG_LEVEL` defaults to `warn` in compose. At that level the api hides its progress lines (catalog rebuilt, EPG
+imported, probe pass); check `GET /api/meta` for those instead, or set `LOG_LEVEL=info` in `.env` while you debug.
+The proxy only distinguishes `silent` from everything else, so it still logs one line per relayed request.
 
 ## Routine tasks
 
-**Update to the latest code.** `infra/scripts/update.sh` — pulls, rebuilds or pulls images, restarts,
-reloads Caddy if its config changed, prunes old images. Zero-ish downtime: Caddy keeps serving while
+**Update to the latest code.** `infra/scripts/update.sh` pulls, rebuilds or pulls images, restarts,
+reloads Caddy if its config changed, and prunes old images. It handles `web`, `api` and `proxy` first and `epg` last.
+If the `epg` build fails, the guide container keeps its previous image. Zero-ish downtime: Caddy keeps serving while
 `api` restarts (a few seconds); the catalog is on disk so there is no re-ingest.
 
 **Force a catalog refresh.** Set `ADMIN_TOKEN` in `.env` (then `docker compose up -d api`), and:
@@ -58,11 +60,14 @@ curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" https://$DOMAIN/api/admin/e
 
 **Narrow or widen the guide.** Edit `EPG_SITES` / `EPG_EXCLUDE_SITES` in `.env`,
 `docker compose up -d epg`. Site names are the folder names in
-[iptv-org/epg/sites](https://github.com/iptv-org/epg/tree/master/sites).
+[iptv-org/epg/sites](https://github.com/iptv-org/epg/tree/master/sites). On a host under 6 GB keep `EPG_SITES`
+to a curated list and set `EPG_SPLIT_BY_SITE=true` (see [DEPLOY.md](DEPLOY.md#narrowing-the-tv-guide)).
 
 **Rotate the relay secret.** `infra/scripts/gen-secret.sh --write --force` then
-`docker compose up -d api proxy`. Relay URLs already open in players stop working (they are re-fetched
-on the next channel open); this is harmless.
+`docker compose up -d api proxy`. Rotation revokes every outstanding relay URL at once, including ones in
+M3U playlists already downloaded. Players see 403 and must re-open the channel (or re-download the M3U) to get
+new URLs. Without rotation, a relay URL stops working at its own `exp` (24 h for channel pages, 7 d for M3U
+exports), so a URL copied out of the site is only good for that long. Use rotation after a leak or an abuse report.
 
 **Turn the relay off/on.** Edit `COMPOSE_PROFILES` (remove or add `proxy`) and `PROXY_ENABLED`,
 then `docker compose up -d --remove-orphans`.
@@ -103,6 +108,8 @@ largest edge served.
 - If every logo shows as a broken image, the edge is not routing `/logo/*` to the api. The Caddy config must
   contain a `handle /logo/*` block that proxies to `api:3000`. Set `LOGO_CACHE_ENABLED=false` to fall back to the
   upstream URLs while you fix it.
+- Caching headers come only from the api: 7 days for a logo, 5 minutes for a miss. The Caddy config adds none on
+  `/logo/*`. If you add one, clients receive two `Cache-Control` values, and a failed fetch can be cached as missing for a week.
 
 ### Relay rate limits
 
@@ -133,19 +140,20 @@ next scheduled ingest. Running it again for the same id changes nothing. Ids are
 
 ## Backups
 
-The only state worth keeping is the `data` volume (catalog is rebuilt from the internet anyway, but
-the guide file represents hours of grabbing) and `caddy_data` (certificates; also re-creatable, but
-Let's Encrypt rate-limits re-issuance).
+The state worth keeping is the `data` volume (the guide file represents hours of grabbing, and the local
+blocklist is yours) and `caddy_data` (certificates, which Let's Encrypt rate-limits when re-issued). The catalog is
+rebuilt from the internet anyway.
 
 ```sh
-docker compose stop api epg
-docker run --rm -v freetv_data:/data -v $PWD:/backup alpine tar czf /backup/freetv-data.tgz -C / data
-docker run --rm -v freetv_caddy_data:/data -v $PWD:/backup alpine tar czf /backup/freetv-caddy.tgz -C / data
-docker compose start api epg
+infra/scripts/backup.sh          # no downtime: catalog snapshot, data-DATE.tgz, caddy-DATE.tgz in ./backups
 ```
 
-Restore by extracting into the volumes before the first `up`. `.env` is the other thing to keep
-(it holds `PROXY_SECRET`; losing it is harmless, players just re-fetch URLs).
+The catalog is copied with SQLite's online backup API, so the api keeps serving while it runs. Copy the
+`backups/` directory off the host regularly. `.env` is part of the backup as well, because it holds
+`PROXY_SECRET`. Losing that secret is harmless: players just re-fetch URLs.
+
+Restore: see [DEPLOY.md](DEPLOY.md#backups). Put the data archive back into the `data` volume with the api
+stopped, then start the stack again.
 
 ## Capacity and sizing
 
@@ -157,7 +165,7 @@ Measured on the catalog as of October 2026 (31.5k channels, 16k streams):
 | `catalog.db` | ~120 MB with a full guide; WAL checkpointed after each import |
 | API list queries | 7–40 ms server-side; `/api/playlist.m3u` for all channels ~0.4 s / 2.7 MB |
 | XMLTV import | ~22k programmes/s, flat ~200 MB RSS regardless of file size |
-| EPG grab, `EPG_SITES=all`, `EPG_DAYS=2` | ~25k HTTP requests to guide sites; hours per run; 1–2 CPU cores busy; 2 GB RAM limit in compose |
+| EPG grab, `EPG_SITES=all`, `EPG_DAYS=2` | ~25k HTTP requests to guide sites; hours per run; 2 CPU cores and a 4 GB RAM limit in compose |
 | Relay | roughly 2–8 Mbit/s per concurrent viewer who needed the relay; bounded by `PROXY_MAX_CONCURRENT` (200) and `PROXY_MAX_BYTES` per response |
 | Idle footprint | api ~120 MB RAM, proxy ~40 MB, web ~20 MB, epg ~150 MB between runs |
 

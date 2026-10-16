@@ -13,7 +13,8 @@ Type=oneshot
 User=@FREETV_USER@
 Group=@FREETV_USER@
 WorkingDirectory=@FREETV_DIR@
-# 1 = always build from this checkout (hosts that deploy with --build). 0 = pull GHCR images.
+# 1 = always build from this checkout (hosts that deploy with --build). 0 = pull GHCR images, unless
+# GITHUB_REPOSITORY_OWNER in .env is empty, in which case update.sh builds.
 Environment=FREETV_BUILD=@FREETV_BUILD@
 ExecStart=@FREETV_DIR@/infra/scripts/update.sh
 # Image builds on a small host can take a long time.

@@ -7,6 +7,16 @@ export function guideEtag(st: Pick<fs.Stats, "mtimeMs" | "size">): string {
   return `W/"${Math.trunc(st.mtimeMs)}-${st.size}"`;
 }
 
+/**
+ * True when the prebuilt gzip copy may be served for the source: gz mtime >= source mtime, at millisecond
+ * precision. The importer sets the copy's mtime from the source's, so equality is the normal case, but
+ * utimes goes through a float of seconds and can land a fraction of a millisecond low: hence round()
+ * on the copy and floor() on the source.
+ */
+export function gzipIsCurrent(gz: Pick<fs.Stats, "mtimeMs">, src: Pick<fs.Stats, "mtimeMs">): boolean {
+  return Math.round(gz.mtimeMs) >= Math.floor(src.mtimeMs);
+}
+
 const stripWeak = (tag: string) => tag.trim().replace(/^W\//, "");
 
 /** True when Accept-Encoding offers gzip with a non-zero q value. */

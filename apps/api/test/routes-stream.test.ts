@@ -9,7 +9,14 @@ import { config } from "../src/config.js";
 import { openDb, closeDb, type Db } from "../src/db/index.js";
 import { buildCatalogFromDir } from "../src/ingest/index.js";
 import { buildServer } from "../src/server.js";
-import { makeProxyUrl } from "../src/lib/sign.js";
+import { makeProxyUrl, signPayload } from "../src/lib/sign.js";
+
+/** Decodes a relay URL's payload and checks the signature over it. Returns the payload object. */
+function decodeProxy(url: string): { u: string; ua?: string; r?: string; exp: number } {
+  const [, , sig, payload] = url.split("/");
+  assert.equal(sig, signPayload("test-secret", payload), "signature covers the payload");
+  return JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+}
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixtures = path.join(here, "fixtures");
@@ -53,15 +60,20 @@ describe("GET /api/stream/:id/:index/play", () => {
     assert.equal(body.url, row.url);
     assert.equal(body.userAgent, row.user_agent);
     assert.equal(body.referrer, row.referrer);
-    assert.equal(body.proxyUrl, makeProxyUrl("test-secret", "/proxy", row.url, row.user_agent, row.referrer));
+    const { exp } = decodeProxy(body.proxyUrl);
+    // Signed with now + PROXY_URL_TTL_SECONDS (24 h by default), not an open-ended URL.
+    const now = Math.floor(Date.now() / 1000);
+    assert.ok(Math.abs(exp - (now + config.proxyUrlTtlSeconds)) <= 5, `exp ${exp} is about now + ${config.proxyUrlTtlSeconds}`);
+    assert.equal(body.proxyUrl, makeProxyUrl("test-secret", "/proxy", row.url, row.user_agent, row.referrer, exp));
     assert.equal(res.headers["cache-control"], "public, max-age=60");
   });
 
   test("User-Agent and Referer are carried inside the signed payload", async () => {
     db.prepare("UPDATE streams SET user_agent = 'UA/1.0', referrer = 'https://ref.example/' WHERE channel = 'BBCNews.uk' AND idx = 0").run();
     const body = json(await get("/api/stream/BBCNews.uk/0/play"));
-    const payload = body.proxyUrl.split("/").pop() as string;
-    assert.deepEqual(JSON.parse(Buffer.from(payload, "base64url").toString("utf8")), {
+    const { exp, ...rest } = decodeProxy(body.proxyUrl);
+    assert.ok(exp > Math.floor(Date.now() / 1000));
+    assert.deepEqual(rest, {
       u: body.url,
       ua: "UA/1.0",
       r: "https://ref.example/",

@@ -9,6 +9,7 @@ import { config } from "../src/config.js";
 import { openDb, closeDb, type Db } from "../src/db/index.js";
 import { buildCatalogFromDir } from "../src/ingest/index.js";
 import { buildServer } from "../src/server.js";
+import { resetMetaCache } from "../src/routes/catalog.js";
 import { isProbeRunning, runProbe } from "../src/prober/index.js";
 import { selectTargets, nextHealth, publishedStatus, TokenBucket } from "../src/prober/scheduler.js";
 import { startFixtureServer, UA_REQUIRED, type FixtureServer } from "./prober-server.js";
@@ -18,6 +19,7 @@ const fixtures = path.join(here, "fixtures");
 const BBC = "BBCNews.uk";
 
 config.logLevel = "silent";
+config.fetchAllowPrivate = true;
 config.proxyEnabled = true;
 config.proxySecret = "test-secret";
 config.proxyPublicPath = "/proxy";
@@ -187,6 +189,13 @@ describe("stream prober: runs, hysteresis and routes", () => {
     assert.equal(streams.find((s) => s.url === `${srv.base}/valid.m3u8`)?.relayOnly, false);
   });
 
+  test("channels.last_checked is kept equal to the newest stream check (backs sort=updated)", () => {
+    const row = db.prepare("SELECT last_checked FROM channels WHERE id = ?").get(BBC) as { last_checked: number | null };
+    const max = (db.prepare("SELECT MAX(last_checked) AS m FROM streams WHERE channel = ?").get(BBC) as { m: number | null }).m;
+    assert.equal(typeof max, "number");
+    assert.equal(row.last_checked, max);
+  });
+
   test("online=true returns only channels with a healthy stream", async () => {
     const body = json(await get("/api/channels?online=true&limit=200"));
     assert.ok(body.items.some((i: { id: string }) => i.id === BBC));
@@ -194,6 +203,7 @@ describe("stream prober: runs, hysteresis and routes", () => {
   });
 
   test("/api/meta reports the health summary", async () => {
+    resetMetaCache(); // the body is cached for 15 s; the probe passes above changed it
     const m = json(await get("/api/meta"));
     const probed = (db.prepare("SELECT COUNT(*) AS n FROM streams WHERE status IS NOT NULL").get() as { n: number }).n;
     const online = (db.prepare("SELECT COUNT(*) AS n FROM streams WHERE status = 'online'").get() as { n: number }).n;

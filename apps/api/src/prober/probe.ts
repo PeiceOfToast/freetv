@@ -1,5 +1,9 @@
 // Single-URL probe: is this stream's HLS playlist (or a raw media response) reachable right now?
-// Never throws. Every failure (bad URL, HTTP error, DNS, reset, timeout, empty master) is an offline result.
+// Never throws. Every failure (bad URL, HTTP error, DNS, reset, timeout, empty master, blocked target) is an offline result.
+// Each hop is checked against the SSRF guard (lib/ssrf.ts) before it is fetched.
+
+import type { Response } from "undici";
+import { TargetForbiddenError, guardedFetch } from "../lib/ssrf.js";
 
 export const DEFAULT_USER_AGENT =
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
@@ -63,7 +67,17 @@ async function verdictFor(
 
   let res: Response;
   for (let hop = 0; ; hop++) {
-    res = await fetch(target, { method: "GET", redirect: "manual", signal, headers: requestHeaders(opts) });
+    try {
+      // guardedFetch checks the hop (assertPublicTarget) before connecting.
+      res = await guardedFetch(target, { signal, headers: requestHeaders(opts) });
+    } catch (err) {
+      if (err instanceof TargetForbiddenError) return `blocked target: ${err.message}`;
+      // The connect-time lookup refused an address: undici wraps it as a fetch failure.
+      if ((err as { cause?: { code?: string } } | null)?.cause?.code === "EFORBIDDEN_TARGET") {
+        return "blocked target: resolved address not allowed";
+      }
+      throw err;
+    }
     setStatus(res.status);
     const location = res.headers.get("location");
     if (res.status >= 300 && res.status < 400 && location) {

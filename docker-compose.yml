@@ -1,14 +1,27 @@
 # FreeTV stack. Copy .env.example to .env first (docker compose reads it for interpolation
 # and for COMPOSE_PROFILES). Start: `docker compose up -d`.
 #
-# Images: each service is built from apps/<svc> and tagged ghcr.io/<owner>/freetv-<svc>:<tag>,
-# so you can either build locally (`docker compose up -d --build`) or pull published
-# multi-arch images (`docker compose pull && docker compose up -d`).
+# Images: each service is built from apps/<svc> and tagged ghcr.io/<owner>/freetv-<svc>:<tag>.
+# <owner> is GITHUB_REPOSITORY_OWNER from .env. When that is empty the owner falls back to
+# "local", a namespace nothing is published under, so the images can only be built here
+# (`docker compose up -d --build`). Set GITHUB_REPOSITORY_OWNER to pull published images
+# (`docker compose pull && docker compose up -d`).
+#
+# Users: the api, proxy and epg images run as the image USER "node" (uid 1000). There is no
+# `user:` key here on purpose, so each Dockerfile decides the uid. The data volume must be
+# owned by 1000:1000 (docs/TROUBLESHOOTING.md, "EACCES on /data").
 #
 # Optional profiles (add to COMPOSE_PROFILES in .env):
 #   monitoring  Prometheus + Grafana, Grafana on 127.0.0.1:3002 only. docs/DEPLOY.md "Monitoring".
 #   autoupdate  Watchtower, pulls new GHCR images daily. docs/DEPLOY.md "Automatic updates".
 name: freetv
+
+# Log rotation for every container, profiles included. Without it json-file grows without limit.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
 
 # Services labelled with this are the only ones Watchtower (profile autoupdate) may restart.
 x-watchtower-labels: &watchtower-labels
@@ -18,9 +31,10 @@ services:
   web:
     build:
       context: ./apps/web
-    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-freetv}/freetv-web:${FREETV_TAG:-latest}
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-local}/freetv-web:${FREETV_TAG:-latest}
     restart: unless-stopped
     labels: *watchtower-labels
+    logging: *logging
     ports:
       - "80:80"
       - "443:443"
@@ -40,10 +54,11 @@ services:
   api:
     build:
       context: ./apps/api
-    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-freetv}/freetv-api:${FREETV_TAG:-latest}
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-local}/freetv-api:${FREETV_TAG:-latest}
     restart: unless-stopped
     mem_limit: 1g
     labels: *watchtower-labels
+    logging: *logging
     environment:
       IPTV_API_BASE: ${IPTV_API_BASE:-https://iptv-org.github.io/api}
       INGEST_INTERVAL_HOURS: ${INGEST_INTERVAL_HOURS:-6}
@@ -51,9 +66,16 @@ services:
       PROXY_ENABLED: ${PROXY_ENABLED:-true}
       PROXY_SECRET: ${PROXY_SECRET:?Set PROXY_SECRET in .env (run infra/scripts/gen-secret.sh)}
       PROXY_PUBLIC_PATH: ${PROXY_PUBLIC_PATH:-/proxy}
+      # Signed relay URLs expire after these many seconds (channel pages / M3U exports).
+      # Empty = the api's built-in default. See .env.example.
+      PROXY_URL_TTL_SECONDS: ${PROXY_URL_TTL_SECONDS:-}
+      PROXY_EXPORT_TTL_SECONDS: ${PROXY_EXPORT_TTL_SECONDS:-}
       ADMIN_TOKEN: ${ADMIN_TOKEN:-}
       PUBLIC_URL: ${PUBLIC_URL:-}
+      LOG_LEVEL: ${LOG_LEVEL:-warn}
+      APP_VERSION: ${APP_VERSION:-0.1.0}
       EPG_FILE: /data/epg/guide.xml
+      EPG_POLL_SECONDS: ${EPG_POLL_SECONDS:-60}
       # Stream health prober
       PROBE_ENABLED: ${PROBE_ENABLED:-true}
       PROBE_INTERVAL_HOURS: ${PROBE_INTERVAL_HOURS:-6}
@@ -74,9 +96,10 @@ services:
     profiles: ["proxy"]
     build:
       context: ./apps/proxy
-    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-freetv}/freetv-proxy:${FREETV_TAG:-latest}
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-local}/freetv-proxy:${FREETV_TAG:-latest}
     restart: unless-stopped
     labels: *watchtower-labels
+    logging: *logging
     environment:
       PROXY_SECRET: ${PROXY_SECRET:?Set PROXY_SECRET in .env (run infra/scripts/gen-secret.sh)}
       PROXY_PUBLIC_PATH: ${PROXY_PUBLIC_PATH:-/proxy}
@@ -88,24 +111,41 @@ services:
       PROXY_RATE_LIMIT_BURST: ${PROXY_RATE_LIMIT_BURST:-60}
       PROXY_MAX_CONCURRENT_PER_IP: ${PROXY_MAX_CONCURRENT_PER_IP:-16}
       PROXY_TRUST_PROXY: ${PROXY_TRUST_PROXY:-true}
+      # Dev only (targets on private ranges). Keep false on any internet-facing instance.
+      PROXY_ALLOW_PRIVATE: ${PROXY_ALLOW_PRIVATE:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-warn}
 
   epg:
     profiles: ["epg"]
     build:
       context: ./apps/epg
-    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-freetv}/freetv-epg:${FREETV_TAG:-latest}
+      args:
+        # iptv-org/epg commit the grabber is built from. Same value as the default in
+        # apps/epg/Dockerfile and .env.example; see docs/notes/review-fixes-d.md to bump it.
+        EPG_REF: ${EPG_REF:-8c23cfe7396724ee5297f370415fc04d6fda058c}
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-local}/freetv-epg:${FREETV_TAG:-latest}
     restart: unless-stopped
-    mem_limit: 2g
+    # The grabber holds several hundred thousand programmes in memory before its XML write, so
+    # EPG_SITES=all may need more than 2 GB (unverified). 4 GB is the limit here. On a smaller host,
+    # narrow EPG_SITES or set EPG_SPLIT_BY_SITE=true.
+    mem_limit: 4g
     cpus: 2
     labels: *watchtower-labels
+    logging: *logging
     environment:
       IPTV_API_BASE: ${IPTV_API_BASE:-https://iptv-org.github.io/api}
       EPG_SITES: ${EPG_SITES:-all}
+      EPG_EXCLUDE_SITES: ${EPG_EXCLUDE_SITES:-}
+      EPG_ONE_SITE_PER_CHANNEL: ${EPG_ONE_SITE_PER_CHANNEL:-true}
       EPG_DAYS: ${EPG_DAYS:-2}
       EPG_MAX_CONNECTIONS: ${EPG_MAX_CONNECTIONS:-10}
+      EPG_TIMEOUT_MS: ${EPG_TIMEOUT_MS:-30000}
+      EPG_GRAB_ARGS: ${EPG_GRAB_ARGS:-}
+      EPG_SPLIT_BY_SITE: ${EPG_SPLIT_BY_SITE:-false}
+      EPG_REFRESH_API_DATA: ${EPG_REFRESH_API_DATA:-true}
       EPG_INTERVAL_HOURS: ${EPG_INTERVAL_HOURS:-12}
       EPG_RUN_ON_START: ${EPG_RUN_ON_START:-true}
-      EPG_FILE: /data/epg/guide.xml
+      EPG_OUTPUT: /data/epg/guide.xml
     volumes:
       - data:/data
 
@@ -118,6 +158,7 @@ services:
     image: prom/prometheus:v3.5.0
     restart: unless-stopped
     mem_limit: 512m
+    logging: *logging
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
@@ -131,6 +172,7 @@ services:
     image: grafana/grafana:11.6.0
     restart: unless-stopped
     mem_limit: 512m
+    logging: *logging
     depends_on:
       - prometheus
     ports:
@@ -154,10 +196,14 @@ services:
   # It can only update images that are pulled from a registry. Services built with --build are
   # ignored or replaced by whatever GHCR has. Use infra/auto-update/ (systemd timer) for those.
   # Watchtower gets the Docker socket, which is root on the host. Keep this profile opt-in.
+  # Pinned to a tag, not :latest. containrrr/watchtower 1.7.1 is the long-standing upstream release; it
+  # is no longer maintained and may fail against newer Docker Engine API minimums. Check it on the host
+  # before relying on it (docs/DEPLOY.md "Automatic updates").
   watchtower:
     profiles: ["autoupdate"]
-    image: nickfedor/watchtower:latest
+    image: containrrr/watchtower:1.7.1
     restart: unless-stopped
+    logging: *logging
     environment:
       WATCHTOWER_LABEL_ENABLE: "true"
       WATCHTOWER_SCHEDULE: ${WATCHTOWER_SCHEDULE:-0 0 4 * * *} # 6-field cron (seconds first): 04:00 daily

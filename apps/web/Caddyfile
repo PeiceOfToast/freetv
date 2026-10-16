@@ -55,10 +55,10 @@
 		file_server
 	}
 
-	# Cached channel logos are served by the api (LOGO_CACHE_ENABLED).
+	# Cached channel logos are served by the api (LOGO_CACHE_ENABLED). Cache-Control comes from the api
+	# alone (7 days for hits, 5 minutes for misses). Do not add a header here: Caddy would send both.
 	handle /logo/* {
 		reverse_proxy api:3000
-		header Cache-Control "public, max-age=604800, stale-while-revalidate=86400"
 	}
 
 	# PWA manifest / service worker: never cache the SW, correct manifest type.

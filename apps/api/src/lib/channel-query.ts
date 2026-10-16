@@ -166,7 +166,8 @@ export function planChannels(query: Record<string, unknown>, opts: PlanOptions):
       case "quality":
         return `c.quality_rank ${dir}, c.name_sort, c.id`;
       case "updated":
-        return `COALESCE((SELECT MAX(s.last_checked) FROM streams s WHERE s.channel = c.id), 0) ${dir}, c.name_sort, c.id`;
+        // channels.last_checked is kept current by ingest and by the prober's result apply (schema v4).
+        return `COALESCE(c.last_checked, 0) ${dir}, c.name_sort, c.id`;
       default:
         return `c.name_sort ${dir}, c.id`;
     }

@@ -9,6 +9,7 @@ import { config } from "../src/config.js";
 import { openDb, closeDb, type Db } from "../src/db/index.js";
 import { buildCatalogFromDir } from "../src/ingest/index.js";
 import { buildServer } from "../src/server.js";
+import { resetMetaCache } from "../src/routes/catalog.js";
 import { qualityRank } from "../src/lib/quality.js";
 import { makeProxyUrl } from "../src/lib/sign.js";
 
@@ -65,6 +66,24 @@ describe("catalog routes", () => {
     test("is cacheable for 60 seconds", async () => {
       const res = await get("/api/meta");
       assert.equal(res.headers["cache-control"], "public, max-age=60");
+    });
+
+    test("reuses the computed body for 15 seconds, then reads the database again", async (t) => {
+      resetMetaCache();
+      let now = 1_000_000;
+      t.mock.method(Date, "now", () => now);
+      const ins = db.prepare("INSERT INTO programmes (channel, start_ts, stop_ts, title) VALUES ('BBCNews.uk', 1, 2, 'cache probe')");
+      const before = json(await get("/api/meta")).programmes;
+      ins.run();
+      try {
+        now += 14_000;
+        assert.equal(json(await get("/api/meta")).programmes, before, "still inside the 15 s window");
+        now += 1_000;
+        assert.equal(json(await get("/api/meta")).programmes, before + 1, "window expired, fresh count");
+      } finally {
+        db.prepare("DELETE FROM programmes WHERE title = 'cache probe'").run();
+        resetMetaCache();
+      }
     });
   });
 
@@ -226,6 +245,36 @@ describe("catalog routes", () => {
       assert.deepEqual(ranks, [...ranks].sort((a, b) => b - a));
     });
 
+    test("sort=updated orders by channels.last_checked (NULL counts as 0), newest first", async () => {
+      const [a, b] = (db.prepare(
+        "SELECT id FROM channels WHERE has_stream = 1 AND is_nsfw = 0 AND blocked = 0 ORDER BY name_sort, id LIMIT 2",
+      ).all() as Array<{ id: string }>).map((r) => r.id);
+      const saved = db.prepare("SELECT id, last_checked FROM channels WHERE id IN (?, ?)").all(a, b) as Array<{ id: string; last_checked: number | null }>;
+      try {
+        db.prepare("UPDATE channels SET last_checked = NULL").run();
+        db.prepare("UPDATE channels SET last_checked = 1000 WHERE id = ?").run(a);
+        db.prepare("UPDATE channels SET last_checked = 2000 WHERE id = ?").run(b);
+        const body = json(await get("/api/channels?sort=updated&limit=200"));
+        const got = ids(body);
+        assert.ok(got.indexOf(b) < got.indexOf(a), "newer channel first by default");
+        assert.equal(got[0], b);
+        // Ascending puts the NULL (0) channels first, so walk pages until both are seen.
+        const pos = new Map<string, number>();
+        for (let page = 1; page < 500 && !(pos.has(a) && pos.has(b)); page++) {
+          const items = ids(json(await get(`/api/channels?sort=updated&order=asc&limit=200&page=${page}`)));
+          if (items.length === 0) break;
+          items.forEach((id, i) => pos.set(id, page * 1000 + i));
+        }
+        assert.ok(pos.has(a) && pos.has(b), "both channels reachable in ascending order");
+        assert.ok(pos.get(a)! < pos.get(b)!, "oldest first when order=asc");
+        const nulls = got.slice(got.indexOf(a) + 1);
+        assert.ok(nulls.length > 0, "channels never checked sort after the checked ones");
+      } finally {
+        const restore = db.prepare("UPDATE channels SET last_checked = ? WHERE id = ?");
+        for (const r of saved) restore.run(r.last_checked, r.id);
+      }
+    });
+
     test("sort=relevance without q falls back to name", async () => {
       const a = json(await get("/api/channels?sort=relevance&limit=20"));
       const b = json(await get("/api/channels?sort=name&limit=20"));
@@ -292,7 +341,13 @@ describe("catalog routes", () => {
       ch.streams.forEach((s: { index: number }, i: number) => assert.equal(s.index, i));
 
       const first = ch.streams[0];
-      const expectedProxy = makeProxyUrl("test-secret", "/proxy", first.url, first.userAgent, first.referrer);
+      // Relay URLs carry an expiry (review 2.2): decode it, check it is ~now + 24 h, then recompute the signature.
+      const payloadB64 = String(first.proxyUrl).split("/").pop()!;
+      const payload = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8")) as { u: string; exp: number };
+      assert.equal(payload.u, first.url);
+      const nowS = Math.floor(Date.now() / 1000);
+      assert.ok(payload.exp >= nowS + 86400 - 60 && payload.exp <= nowS + 86400 + 60, `exp ${payload.exp} ~ now+24h`);
+      const expectedProxy = makeProxyUrl("test-secret", "/proxy", first.url, first.userAgent, first.referrer, payload.exp);
       assert.equal(first.proxyUrl, expectedProxy);
       assert.equal(first.online, null);
       assert.equal(first.lastChecked, null);
@@ -304,6 +359,7 @@ describe("catalog routes", () => {
         const ch = json(await get("/api/channels/BBCNews.uk"));
         assert.ok(ch.streams.length > 0);
         for (const s of ch.streams) assert.equal("proxyUrl" in s, false);
+        resetMetaCache(); // /api/meta is cached for 15 s; this test changes config under it
         const meta = json(await get("/api/meta"));
         assert.equal(meta.proxyEnabled, false);
       } finally {

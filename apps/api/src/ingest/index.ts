@@ -1,6 +1,8 @@
+import fs from "node:fs";
+import path from "node:path";
 import type { FastifyBaseLogger } from "fastify";
 import { config } from "../config.js";
-import { getDb, type Db } from "../db/index.js";
+import { getDb, getMeta, setMeta, type Db } from "../db/index.js";
 import { buildCatalog, type BuildStats } from "./build.js";
 import { fetchDatasets } from "./fetch.js";
 
@@ -9,29 +11,60 @@ type Log = Pick<FastifyBaseLogger, "info" | "warn" | "error">;
 export { buildCatalog as buildCatalogFromDir } from "./build.js";
 export type { BuildStats } from "./build.js";
 
+export interface RunOptions {
+  /** Rebuild the catalog even when no dataset and no local blocklist change is detected. */
+  force?: boolean;
+}
+
+/** meta key holding the local blocklist fingerprint the current catalog was built from. */
+const BLOCKLIST_FP_KEY = "local_blocklist_fp";
+
 // Runs are chained so two ingests never overlap (the second waits for the first).
 let queue: Promise<void> = Promise.resolve();
 
-async function ingestOnce(log?: Log): Promise<void> {
+/** Same path readLocalBlocklist() reads (ingest/build.ts): LOCAL_BLOCKLIST, else $DATA_DIR/local-blocklist.json. */
+export function localBlocklistPath(): string {
+  return process.env.LOCAL_BLOCKLIST ?? path.join(process.env.DATA_DIR ?? "/data", "local-blocklist.json");
+}
+
+/** mtime and size of the local blocklist, or "absent". Changes on every write, create or delete. */
+export function localBlocklistFingerprint(file: string = localBlocklistPath()): string {
+  try {
+    const st = fs.statSync(file);
+    return `${st.mtimeMs}:${st.size}`;
+  } catch {
+    return "absent";
+  }
+}
+
+async function ingestOnce(log: Log | undefined, opts: RunOptions): Promise<void> {
   const db: Db = getDb();
   const started = Date.now();
-  const changed = await fetchDatasets(config.rawDir, { log: log ? { info: (m) => log.info(m), warn: (m) => log.warn(m) } : undefined });
+  // Taken before the build so an edit made during the build is seen as a change on the next run.
+  const blocklistFp = localBlocklistFingerprint();
+  const datasetsChanged = await fetchDatasets(config.rawDir, { log: log ? { info: (m) => log.info(m), warn: (m) => log.warn(m) } : undefined });
   const hasChannels = db.prepare("SELECT 1 FROM channels LIMIT 1").get() !== undefined;
-  if (!changed && hasChannels) {
-    log?.info("ingest: datasets unchanged, catalog not rebuilt");
+  const blocklistChanged = getMeta(BLOCKLIST_FP_KEY) !== blocklistFp;
+  if (!opts.force && !datasetsChanged && !blocklistChanged && hasChannels) {
+    log?.info("ingest: datasets and local blocklist unchanged, catalog not rebuilt");
     return;
   }
+  const reason = opts.force ? "forced" : !hasChannels ? "catalog empty" : datasetsChanged ? "datasets changed" : "local blocklist changed";
   const stats: BuildStats = buildCatalog(db, config.rawDir);
+  setMeta(BLOCKLIST_FP_KEY, blocklistFp);
   log?.info(
-    `ingest: catalog rebuilt in ${Date.now() - started} ms: ${stats.channels} channels ` +
+    `ingest: catalog rebuilt (${reason}) in ${Date.now() - started} ms: ${stats.channels} channels ` +
       `(${stats.channelsWithStreams} with streams, ${stats.blockedChannels} blocked), ${stats.streams} streams ` +
       `(${stats.streamsSkipped} orphan skipped), ${stats.guides} guides`,
   );
 }
 
-/** Download datasets and rebuild the catalog if anything changed (or the catalog is empty). Requires openDb(). */
-export function runIngest(log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">): Promise<void> {
-  const run = queue.then(() => ingestOnce(log));
+/**
+ * Download datasets and rebuild the catalog when anything changed: an upstream dataset, the local
+ * blocklist file (mtime or size), or an empty catalog. `force` always rebuilds. Requires openDb().
+ */
+export function runIngest(log?: Log, opts: RunOptions = {}): Promise<void> {
+  const run = queue.then(() => ingestOnce(log, opts));
   queue = run.catch(() => undefined);
   return run;
 }

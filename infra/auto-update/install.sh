@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install (or remove) the weekly FreeTV update timer. Opt-in: nothing runs until you install it.
 #
-#   sudo infra/auto-update/install.sh                 timer runs update.sh (pull GHCR images, build if missing)
+#   sudo infra/auto-update/install.sh                 timer runs update.sh (pull GHCR images; builds if GITHUB_REPOSITORY_OWNER is empty)
 #   sudo infra/auto-update/install.sh --build         timer runs update.sh with FREETV_BUILD=1 (build from this checkout)
 #   sudo infra/auto-update/install.sh --dir /opt/freetv --user freetv
 #   sudo infra/auto-update/install.sh --uninstall

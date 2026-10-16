@@ -46,6 +46,14 @@ write_files:
       done
       netfilter-persistent save
 
+      echo "== docker log rotation (before the engine starts; the apt install below starts it)"
+      # Same limits as the logging anchor in docker-compose.yml, for any container started outside compose.
+      # Written only when absent so a hand-edited daemon.json survives a re-run.
+      if [[ ! -f /etc/docker/daemon.json ]]; then
+        printf '%s\n' '{' '  "log-driver": "json-file",' \
+          '  "log-opts": { "max-size": "20m", "max-file": "5" } }' > /etc/docker/daemon.json
+      fi
+
       echo "== docker engine and compose plugin (Docker's apt repository)"
       if ! command -v docker >/dev/null 2>&1; then
         install -m 0755 -d /etc/apt/keyrings
@@ -80,8 +88,27 @@ write_files:
       chown -R freetv:freetv /opt/freetv
 
       echo "== start the stack (built on this host, which is native arm64)"
-      docker compose up -d --build
+      # Core services first. epg is built and started last, on its own: its build clones and installs
+      # the iptv-org/epg grabber from the network, and a failure there must not keep the site down.
+      # `config --services` lists only the services of the active COMPOSE_PROFILES.
+      mapfile -t all_services < <(docker compose config --services)
+      core_services=()
+      epg_enabled=0
+      for svc in "${all_services[@]}"; do
+        if [[ "$svc" == epg ]]; then epg_enabled=1; else core_services+=("$svc"); fi
+      done
+      docker compose up -d --build "${core_services[@]}"
       docker compose ps
+      if (( epg_enabled )); then
+        echo "== epg (separate step; a failure here leaves the rest running)"
+        if docker compose up -d --build epg; then
+          echo "epg started"
+        else
+          echo "WARNING: epg did not build or start. The site is up without a TV guide." >&2
+          echo "WARNING: retry with: cd /opt/freetv && docker compose up -d --build epg" >&2
+          echo "WARNING: check the build output above, or: docker compose logs epg" >&2
+        fi
+      fi
       echo "== done"
 
 runcmd:

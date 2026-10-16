@@ -163,6 +163,20 @@ Forces an XMLTV re-import. `202 { "started": true }`.
 502 on upstream failure, 413 if a single upstream response exceeds `PROXY_MAX_BYTES` (default 50 MB; playlists are tiny, segments are a few MB).
 `GET /healthz` → `ok`.
 
+**Expiry.** Every payload carries `exp` (unix seconds). The proxy answers:
+
+- `403 {"error":"expired"}`: `exp` is missing, or it has passed (playlists: at `exp`; segments: at `exp` + 600 s).
+- `403 {"error":"invalid expiry"}`: `exp` is more than 30 days ahead of now.
+- `400 {"error":"invalid payload"}`: `exp` is present but not an integer.
+
+Lifetimes issued by `api`: channel responses (`/api/channels/:id`, `/api/stream/:id/:index/play`) get now + `PROXY_URL_TTL_SECONDS`
+(24 h); `playlist.m3u?proxy=true` gets now + `PROXY_EXPORT_TTL_SECONDS` (7 d). When the proxy rewrites a playlist, every child URL
+carries the parent's `exp`, so a session cannot extend itself. A live stream watched past its `exp` gets 403 on the next playlist
+refresh, and the client must re-open the channel to get fresh URLs.
+
+**Upgrade note.** Payloads without `exp` are refused, so every relay URL issued before this change stops working. Clients that
+hold old URLs get 403 and must re-open the channel (or re-download the M3U) to get new ones. There is no grandfathering.
+
 # Shared signing helper
 
 Both `api` and `proxy` implement the same function (copy, do not share a package):
@@ -171,8 +185,11 @@ Both `api` and `proxy` implement the same function (copy, do not share a package
 import { createHmac } from "node:crypto";
 export function b64url(buf: Buffer | string) { return Buffer.from(buf).toString("base64url"); }
 export function signPayload(secret: string, payload: string) { return createHmac("sha256", secret).update(payload).digest("base64url"); }
-export function makeProxyUrl(secret: string, publicPath: string, u: string, ua?: string | null, r?: string | null) {
-  const payload = b64url(JSON.stringify({ u, ...(ua ? { ua } : {}), ...(r ? { r } : {}) }));
+export function makeProxyUrl(secret: string, publicPath: string, u: string, ua: string | null | undefined, r: string | null | undefined, exp: number) {
+  const payload = b64url(JSON.stringify({ u, ...(ua ? { ua } : {}), ...(r ? { r } : {}), exp }));
   return `${publicPath}/${signPayload(secret, payload)}/${payload}`;
 }
 ```
+
+`exp` is required (unix seconds). The proxy copy also exports `verifySignature`, `checkExpiry` and the constants
+`SEGMENT_GRACE_SECONDS` (600) and `MAX_EXP_AHEAD_SECONDS` (30 d) that implement the rules in "Proxy contract".

@@ -9,6 +9,7 @@ import { config } from "../src/config.js";
 import { openDb, closeDb, type Db } from "../src/db/index.js";
 import { buildCatalogFromDir } from "../src/ingest/index.js";
 import { buildServer } from "../src/server.js";
+import { bearerTokenOk, resetMetricsCache } from "../src/routes/admin.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixtures = path.join(here, "fixtures");
@@ -104,6 +105,48 @@ describe("admin routes", () => {
     test("accepts the token from a case-sensitive Bearer header only", async () => {
       assert.equal((await status({ authorization: `bearer ${TOKEN}` })).statusCode, 401);
     });
+
+    test("catalog.lastIngestMs is the duration the last rebuild recorded", async () => {
+      const recorded = (db.prepare("SELECT value FROM meta WHERE key = 'last_ingest_ms'").get() as { value: string }).value;
+      const body = JSON.parse((await status(auth)).body) as { catalog: { lastIngestMs: number | null } };
+      assert.equal(typeof body.catalog.lastIngestMs, "number");
+      assert.equal(body.catalog.lastIngestMs, Number(recorded));
+    });
+
+    test("catalog.source says which origin the last ingest's ETags came from", async () => {
+      const savedDataDir = config.dataDir;
+      const rawDir = path.join(dir, "raw");
+      fs.mkdirSync(rawDir, { recursive: true });
+      config.dataDir = dir;
+      const sourceFor = async (source: string | null) => {
+        if (source === null) fs.rmSync(path.join(rawDir, "etags.json"), { force: true });
+        else fs.writeFileSync(path.join(rawDir, "etags.json"), JSON.stringify({ channels: { etag: '"v1"', source } }));
+        return (JSON.parse((await status(auth)).body) as { catalog: { source: string | null } }).catalog.source;
+      };
+      try {
+        assert.equal(await sourceFor(config.iptvApiBase), "primary");
+        assert.equal(await sourceFor(config.iptvApiMirror), "mirror");
+        assert.equal(await sourceFor("https://elsewhere.example"), null);
+        assert.equal(await sourceFor(null), null);
+      } finally {
+        config.dataDir = savedDataDir;
+      }
+    });
+  });
+
+  describe("bearerTokenOk", () => {
+    test("matches only the exact Bearer header for a non-empty token", () => {
+      assert.equal(bearerTokenOk(`Bearer ${TOKEN}`, TOKEN), true);
+      assert.equal(bearerTokenOk(`Bearer ${TOKEN}x`, TOKEN), false);
+      assert.equal(bearerTokenOk(TOKEN, TOKEN), false, "scheme is required");
+      assert.equal(bearerTokenOk(undefined, TOKEN), false);
+      assert.equal(bearerTokenOk(["Bearer", TOKEN], TOKEN), false);
+    });
+
+    test("an unconfigured (empty) token never matches", () => {
+      assert.equal(bearerTokenOk("Bearer ", ""), false);
+      assert.equal(bearerTokenOk(undefined, ""), false);
+    });
   });
 
   describe("GET /metrics", () => {
@@ -121,6 +164,24 @@ describe("admin routes", () => {
       await app.inject({ method: "GET", url: "/api/health" });
       const after = requestCount(await scrape(), "/api/health", "200");
       assert.equal(after, before + 1);
+    });
+
+    test("gauges are reused for 15 seconds, then recomputed", async (t) => {
+      resetMetricsCache();
+      let now = 2_000_000;
+      t.mock.method(Date, "now", () => now);
+      const programmes = (body: string) => Number(body.match(/^freetv_programmes_total (\d+)$/m)?.[1]);
+      const before = programmes(await scrape());
+      db.prepare("INSERT INTO programmes (channel, start_ts, stop_ts, title) VALUES ('BBCNews.uk', 1, 2, 'gauge probe')").run();
+      try {
+        now += 14_000;
+        assert.equal(programmes(await scrape()), before, "still inside the window");
+        now += 1_000;
+        assert.equal(programmes(await scrape()), before + 1, "window expired");
+      } finally {
+        db.prepare("DELETE FROM programmes WHERE title = 'gauge probe'").run();
+        resetMetricsCache();
+      }
     });
 
     test("labels unknown paths as unmatched and counts 401s by status", async () => {

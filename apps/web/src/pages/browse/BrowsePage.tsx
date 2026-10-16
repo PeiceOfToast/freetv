@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useFavorites } from "@/lib/favorites";
 import { nowTs } from "@/lib/format";
@@ -22,6 +22,8 @@ import {
 } from "@/components/browse/state";
 
 const SIDEBAR_KEY = "freetv:browse-sidebar";
+/** While the catalog is still downloading on a fresh install, the page re-checks this often. */
+const CATALOG_RETRY_MS = 15_000;
 function readSidebarOpen(): boolean {
   try { return localStorage.getItem(SIDEBAR_KEY) !== "closed"; } catch { return true; }
 }
@@ -36,14 +38,22 @@ export default function BrowsePage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(readSidebarOpen);
   const [now, setNow] = useState(nowTs);
-  const [health, setHealth] = useState<{ probed: number; online: number } | null>(null);
-
-  // Probe totals for the "n of m checked streams online" line. Failure just hides it.
+  // One /api/meta read feeds two things: the probe totals ("n of m checked streams online") and
+  // whether the catalog has ever been ingested. Failure just hides both.
+  const [meta, setMeta] = useState<{ health: { probed: number; online: number } | null; lastIngest: number | null } | null>(null);
+  const loadMeta = useCallback((signal?: AbortSignal) => {
+    api.meta(signal)
+      .then((m) => setMeta({ health: m.health ?? null, lastIngest: m.lastIngest }))
+      .catch(() => undefined);
+  }, []);
   useEffect(() => {
     const ac = new AbortController();
-    api.meta(ac.signal).then((m) => setHealth(m.health ?? null)).catch(() => undefined);
+    loadMeta(ac.signal);
     return () => ac.abort();
-  }, []);
+  }, [loadMeta]);
+  const health = meta?.health ?? null;
+  // Only true once meta has loaded and shows no ingest yet. Unknown or failed meta is not "pending".
+  const catalogPending = meta !== null && meta.lastIngest === null;
 
   // Re-render every 30 s so the "Now" progress bars stay current.
   useEffect(() => {
@@ -97,6 +107,18 @@ export default function BrowsePage() {
     if (data && !ch.loading && state.page > pageCount) update({ page: pageCount }, { replace: true });
   }, [data, ch.loading, state.page, pageCount, update]);
 
+  // Fresh install: re-check the catalog and the channel list every 15 s until the first ingest lands.
+  const retryRef = useRef(ch.retry);
+  retryRef.current = ch.retry;
+  useEffect(() => {
+    if (!catalogPending) return;
+    const id = window.setInterval(() => {
+      retryRef.current();
+      loadMeta();
+    }, CATALOG_RETRY_MS);
+    return () => window.clearInterval(id);
+  }, [catalogPending, loadMeta]);
+
   const items = data?.items ?? [];
   const rangeText = data && data.items.length > 0
     ? `${(data.page - 1) * data.limit + 1}–${(data.page - 1) * data.limit + data.items.length}`
@@ -117,6 +139,13 @@ export default function BrowsePage() {
     body = <EmptyState title="Couldn’t load channels" description={ch.error} action={<Button onClick={ch.retry}>Try again</Button>} />;
   } else if (!data) {
     body = <ChannelGrid items={[]} view={view} isFavorite={() => false} now={now} busy={false} skeleton />;
+  } else if (items.length === 0 && catalogPending) {
+    body = (
+      <EmptyState
+        title="The channel catalog is still being downloaded — this takes about a minute on a fresh install"
+        description="This page checks again every 15 seconds."
+      />
+    );
   } else if (items.length === 0) {
     body = hasActiveFilters(state) ? (
       <EmptyState

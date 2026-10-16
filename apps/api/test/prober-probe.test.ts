@@ -1,16 +1,48 @@
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
+import { config } from "../src/config.js";
 import { probeStream } from "../src/prober/probe.js";
 import { startFixtureServer, UA_REQUIRED, type FixtureServer } from "./prober-server.js";
 
 describe("probeStream", () => {
   let srv: FixtureServer;
+  const savedAllowPrivate = config.fetchAllowPrivate;
 
   before(async () => {
+    // The fixture server is on 127.0.0.1, which the SSRF guard refuses by default. Allow it here;
+    // the refusal itself is covered in the "SSRF guard" block below.
+    config.fetchAllowPrivate = true;
     srv = await startFixtureServer();
   });
   after(async () => {
+    config.fetchAllowPrivate = savedAllowPrivate;
     await srv.close();
+  });
+
+  test("with FETCH_ALLOW_PRIVATE off, a loopback target is refused before any connection", async () => {
+    config.fetchAllowPrivate = false;
+    try {
+      const hitsBefore = srv.hits.get("/valid.m3u8") ?? 0;
+      const r = await probeStream(`${srv.base}/valid.m3u8`, { timeoutMs: 2000 });
+      assert.equal(r.status, "offline");
+      assert.equal(r.httpStatus, null);
+      assert.match(r.error ?? "", /^blocked target: address not allowed$/);
+      assert.equal(srv.hits.get("/valid.m3u8") ?? 0, hitsBefore, "the fixture server saw no request");
+    } finally {
+      config.fetchAllowPrivate = true;
+    }
+  });
+
+  test("with FETCH_ALLOW_PRIVATE off, the link-local metadata address is refused", async () => {
+    config.fetchAllowPrivate = false;
+    try {
+      const r = await probeStream("http://169.254.169.254/latest/meta-data/", { timeoutMs: 2000 });
+      assert.equal(r.status, "offline");
+      assert.equal(r.httpStatus, null);
+      assert.match(r.error ?? "", /blocked target/);
+    } finally {
+      config.fetchAllowPrivate = true;
+    }
   });
 
   test("a valid media playlist is online", async () => {

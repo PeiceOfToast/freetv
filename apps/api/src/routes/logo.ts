@@ -2,7 +2,7 @@ import fs from "node:fs";
 import type { FastifyInstance } from "fastify";
 import { config } from "../config.js";
 import { HttpError, intParam, qs } from "../lib/http.js";
-import { getLogo, normalizeLogoSize } from "../lib/logo-cache.js";
+import { getLogo, normalizeLogoSize, LogoBusyError } from "../lib/logo-cache.js";
 
 // TRACK L: GET /logo/:id — cached, resized channel logos. See docs/API.md "Logos".
 // Headers are set here, not via installHttpBehaviour (its onSend hook would overwrite Cache-Control).
@@ -31,7 +31,13 @@ export async function logoRoutes(app: FastifyInstance) {
     }
     const size = normalizeLogoSize(requested);
     const accept = String(req.headers.accept ?? "");
-    const hit = await getLogo(req.params.id, size, { webp: /image\/webp/i.test(accept) });
+    let hit: Awaited<ReturnType<typeof getLogo>>;
+    try {
+      hit = await getLogo(req.params.id, size, { webp: /image\/webp/i.test(accept) });
+    } catch (err) {
+      if (err instanceof LogoBusyError) return reply.code(503).header("Retry-After", "5").header("Cache-Control", "no-store").send({ error: "logo cache busy" });
+      throw err;
+    }
     if (!hit) {
       return reply.code(404).header("Cache-Control", "public, max-age=300").send({ error: "no logo" });
     }

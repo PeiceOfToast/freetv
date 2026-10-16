@@ -94,10 +94,27 @@ function healthMeta(db: Db) {
   return { probed: row.probed, online: row.online, lastProbe: last ? Number(last.value) : null };
 }
 
+/** How long the /api/meta body is reused (see also GAUGE_TTL_MS for /metrics). */
+const META_TTL_MS = 15_000;
+let metaCache: { at: number; body: ReturnType<typeof meta> } | null = null;
+
+function cachedMeta(db: Db): ReturnType<typeof meta> {
+  const now = Date.now();
+  if (metaCache && now - metaCache.at < META_TTL_MS) return metaCache.body;
+  const body = meta(db);
+  metaCache = { at: now, body };
+  return body;
+}
+
+/** Test hook: drop the cached /api/meta body so the next request reads the database. */
+export function resetMetaCache(): void {
+  metaCache = null;
+}
+
 export async function catalogRoutes(app: FastifyInstance) {
   installHttpBehaviour(app);
 
-  app.get("/api/meta", async () => meta(getDb()));
+  app.get("/api/meta", async () => cachedMeta(getDb()));
 
   app.get("/api/categories", async (req) => {
     const db = getDb();

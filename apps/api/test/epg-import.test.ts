@@ -1,6 +1,7 @@
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import zlib from "node:zlib";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,6 +9,7 @@ import type { FastifyInstance } from "fastify";
 import { config } from "../src/config.js";
 import { openDb, closeDb, getDb, getMeta } from "../src/db/index.js";
 import { importEpg } from "../src/epg/importer.js";
+import { gzipIsCurrent } from "../src/lib/export-guide.js";
 import { setNowFn } from "../src/epg/time.js";
 import { buildServer } from "../src/server.js";
 
@@ -104,6 +106,23 @@ describe("epg import + routes", () => {
     } finally {
       config.epgFile = saved;
     }
+  });
+
+  test("import drops the staging table and leaves a gzip copy of the guide next to it", () => {
+    const staging = getDb().prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'programmes_new'").get();
+    assert.equal(staging, undefined, "staging table is dropped after the swap");
+    const gz = `${config.epgFile}.gz`;
+    assert.ok(fs.existsSync(gz), "guide.xml.gz written");
+    assert.equal(zlib.gunzipSync(fs.readFileSync(gz)).toString("utf8"), fs.readFileSync(config.epgFile, "utf8"));
+    const gzSt = fs.statSync(gz);
+    const srcSt = fs.statSync(config.epgFile);
+    assert.ok(gzipIsCurrent(gzSt, srcSt), "gz is not older than the source, so it is served");
+    assert.ok(gzipIsCurrent(srcSt, gzSt), "and it is not newer (same mtime to the millisecond)");
+    assert.deepEqual(
+      fs.readdirSync(path.dirname(gz)).filter((f) => f.endsWith(".tmp")),
+      [],
+      "no temp file left behind",
+    );
   });
 
   test("channel epg: window returns overlapping items in start order", async () => {

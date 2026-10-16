@@ -1,10 +1,21 @@
 import { config } from "../config.js";
 import { makeProxyUrl } from "./sign.js";
 
-/** Signed proxy URL, or undefined when the proxy is off or has no secret. */
-export function proxyUrlFor(url: string, userAgent: string | null, referrer: string | null): string | undefined {
+/** Unix seconds: now plus `ttlSeconds`. */
+export const expiryIn = (ttlSeconds: number): number => Math.floor(Date.now() / 1000) + ttlSeconds;
+
+/**
+ * Signed proxy URL, or undefined when the proxy is off or has no secret. exp defaults to now plus
+ * PROXY_URL_TTL_SECONDS; M3U exports pass their own (PROXY_EXPORT_TTL_SECONDS).
+ */
+export function proxyUrlFor(
+  url: string,
+  userAgent: string | null,
+  referrer: string | null,
+  exp: number = expiryIn(config.proxyUrlTtlSeconds),
+): string | undefined {
   if (!config.proxyEnabled || !config.proxySecret) return undefined;
-  return makeProxyUrl(config.proxySecret, config.proxyPublicPath, url, userAgent, referrer);
+  return makeProxyUrl(config.proxySecret, config.proxyPublicPath, url, userAgent, referrer, exp);
 }
 
 /** streams.status -> true | false | null (null = never probed). */

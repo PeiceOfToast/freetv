@@ -9,9 +9,10 @@ import { config } from "../src/config.js";
 import { openDb, closeDb, getDb, type Db } from "../src/db/index.js";
 import { buildCatalogFromDir } from "../src/ingest/index.js";
 import { buildServer } from "../src/server.js";
+import { setMeta } from "../src/db/index.js";
 import { loadExportChannels } from "../src/lib/export-query.js";
 import { renderM3u } from "../src/lib/export-m3u.js";
-import { makeProxyUrl } from "../src/lib/sign.js";
+import { makeProxyUrl, signPayload } from "../src/lib/sign.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixtures = path.join(here, "fixtures");
@@ -202,8 +203,31 @@ describe("GET /api/playlist.m3u", () => {
       for (const e of entries) {
         assert.ok(e.url.startsWith(`${base}/proxy/`), `${e.url} is relayed`);
         const s = streams.get(e.id)!;
-        assert.equal(e.url, `${base}${makeProxyUrl("test-secret", "/proxy", s.url, s.user_agent, s.referrer)}`);
+        const [, , sig, payload] = e.url.slice(base.length).split("/").slice(0);
+        assert.equal(sig, signPayload("test-secret", payload), "signed");
+        const { exp, u, ua, r } = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as {
+          exp: number; u: string; ua?: string; r?: string;
+        };
+        assert.equal(u, s.url);
+        assert.equal(ua, s.user_agent ?? undefined);
+        assert.equal(r, s.referrer ?? undefined);
+        assert.ok(exp > Math.floor(Date.now() / 1000), "relay URLs carry a future exp");
+        assert.equal(e.url, `${base}${makeProxyUrl("test-secret", "/proxy", s.url, s.user_agent, s.referrer, exp)}`);
       }
+    } finally {
+      config.publicUrl = "";
+    }
+  });
+
+  // Passes only once routes/export.ts forwards the exp that export-m3u computes (see the report).
+  test("M3U relay URLs expire after PROXY_EXPORT_TTL_SECONDS (7 d), not the 24 h UI TTL", async () => {
+    config.publicUrl = "https://tv.example.test";
+    try {
+      const entries = parseM3u((await get("/api/playlist.m3u?proxy=true&country=UK")).body);
+      const payload = entries[0].url.split("/").pop() as string;
+      const { exp } = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as { exp: number };
+      const want = Math.floor(Date.now() / 1000) + config.proxyExportTtlSeconds;
+      assert.ok(Math.abs(exp - want) <= 5, `exp ${exp} is about ${want}`);
     } finally {
       config.publicUrl = "";
     }
@@ -308,6 +332,56 @@ describe("export rendering helpers", () => {
     } finally {
       closeDb();
       fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("GET /api/playlist.m3u memo", () => {
+  let dir: string;
+  let db: Db;
+  let app: FastifyInstance;
+
+  before(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "freetv-export-memo-"));
+    db = openDb(path.join(dir, "catalog.db"));
+    buildCatalogFromDir(db, fixtures);
+    config.publicUrl = "";
+    app = await buildServer();
+    await app.ready();
+  });
+
+  after(async () => {
+    await app.close();
+    closeDb();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("a repeat request within 60 s returns the memoised body, until meta.last_ingest changes", async () => {
+    const url = "/api/playlist.m3u?streams=all";
+    const first = await app.inject({ method: "GET", url });
+    const id = (db.prepare("SELECT id FROM channels WHERE has_stream = 1 AND blocked = 0 AND is_nsfw = 0 ORDER BY id LIMIT 1").get() as { id: string }).id;
+    db.prepare("UPDATE channels SET name = name || ' memo-marker' WHERE id = ?").run(id);
+
+    const second = await app.inject({ method: "GET", url });
+    assert.equal(second.body, first.body, "served from the memo, not re-rendered");
+
+    setMeta("last_ingest", "1900000000");
+    const third = await app.inject({ method: "GET", url });
+    assert.notEqual(third.body, first.body, "a new ingest invalidates the memo");
+    assert.match(third.body, /memo-marker/);
+  });
+
+  test("parameter order is normalised: the same query in another order shares one memo entry", async () => {
+    const a = await app.inject({ method: "GET", url: "/api/playlist.m3u?streams=all&proxy=false" });
+    const b = await app.inject({ method: "GET", url: "/api/playlist.m3u?proxy=false&streams=all" });
+    assert.equal(b.body, a.body);
+  });
+
+  test("the memo stays bounded and correct past its 50-entry limit", async () => {
+    for (let i = 0; i < 60; i++) {
+      const r = await app.inject({ method: "GET", url: `/api/playlist.m3u?streams=best&n=${i}` });
+      assert.equal(r.statusCode, 200);
+      assert.match(r.body, /^#EXTM3U /);
     }
   });
 });

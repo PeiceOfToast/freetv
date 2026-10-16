@@ -99,4 +99,4 @@ epg:
     EPG_MAX_CONNECTIONS: "10"                            # EPG_MAX_CONNECTIONS
     EPG_INTERVAL_HOURS: "12"                             # EPG_INTERVAL_HOURS
     EPG_RUN_ON_START: "true"                             # EPG_RUN_ON_START
-    EPG_FILE: /data/epg/guide.xml                        # EPG_FILE
+    EPG_OUTPUT: /data/epg/guide.xml                      # EPG_OUTPUT (epg reads this; EPG_FILE is api-only)

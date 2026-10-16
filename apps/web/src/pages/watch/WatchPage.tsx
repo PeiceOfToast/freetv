@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, ApiError, type ChannelDetail, type Programme, type StreamInfo } from "@/lib/api";
 import { favorites, useIsFavorite } from "@/lib/favorites";
@@ -28,6 +28,22 @@ export default function WatchPage() {
   const [copied, setCopied] = useState(false);
   const isFav = useIsFavorite(id);
   const [saveData] = useSaveData();
+  // Relay URLs expire (24 h); when playback is exhausted or the user retries, re-fetch the channel if
+  // the current copy is older than 10 minutes and remount the player with fresh URLs.
+  const [gen, setGen] = useState(0);
+  const loadedAtRef = useRef(0);
+  const refreshStreams = async (): Promise<boolean> => {
+    if (Date.now() - loadedAtRef.current < 10 * 60_000) return false;
+    try {
+      const channel = await api.channel(id);
+      loadedAtRef.current = Date.now();
+      setState({ status: "ready", channel });
+      setGen((g) => g + 1);
+      return true;
+    } catch {
+      return false;
+    }
+  };
 
   // Channel detail.
   useEffect(() => {
@@ -36,7 +52,7 @@ export default function WatchPage() {
     setEpg(null);
     api
       .channel(id, ac.signal)
-      .then((channel) => setState({ status: "ready", channel }))
+      .then((channel) => { loadedAtRef.current = Date.now(); setState({ status: "ready", channel }); })
       .catch((err: unknown) => {
         if (isAbort(err)) return;
         if (err instanceof ApiError && err.status === 404) setState({ status: "notfound" });
@@ -137,7 +153,7 @@ export default function WatchPage() {
       <div className="watch-split grid gap-6 lg:grid-cols-3">
         <div className="min-w-0 lg:col-span-2">
           {/* Remounted when the reduced-data preference changes, so the new stream order starts from the top. */}
-          <Player key={`${ch.id}:${saveData ? "reduced" : "full"}`} streams={ch.streams} />
+          <Player key={`${ch.id}:${gen}:${saveData ? "reduced" : "full"}`} streams={ch.streams} onExhausted={refreshStreams} />
           <CastBar />
         </div>
 

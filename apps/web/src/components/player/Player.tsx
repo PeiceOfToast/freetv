@@ -4,6 +4,7 @@ import type { StreamInfo } from "@/lib/api";
 import { setMediaSession, setPlaybackState } from "@/lib/media-session";
 import { useSaveData } from "@/lib/network";
 import { orderStreams } from "./order";
+import { DIRECT_TIMEOUT_MS, MAX_ATTEMPTS, RELAY_TIMEOUT_MS, isMixedContent } from "./plan";
 import { ReducedDataToggle } from "./ReducedDataToggle";
 
 export interface PlayerProps {
@@ -16,6 +17,12 @@ export interface PlayerProps {
   subtitle?: string;
   /** Logo URL used as artwork in OS media controls. */
   artwork?: string | null;
+  /**
+   * Called when every automatic attempt has failed (once per exhaustion) and again when the user
+   * presses Retry. The parent can re-fetch the channel to get fresh relay URLs (they expire) and
+   * remount the player; if it returns false, the player just retries its current plan.
+   */
+  onExhausted?: (reason: "auto" | "retry") => boolean | void | Promise<boolean | void>;
 }
 
 interface Attempt {
@@ -32,7 +39,6 @@ type LockableOrientation = ScreenOrientation & { lock(orientation: "landscape"):
 /** The iOS fullscreen player exposes this non-standard method on <video>. */
 type IosVideo = HTMLVideoElement & { webkitEnterFullscreen?: () => void };
 
-const TIMEOUT_MS = 8000;
 const VOL_KEY = "freetv:volume";
 const SEEK_STEP = 10;
 const DOUBLE_TAP_MS = 300;
@@ -93,12 +99,13 @@ function streamLabel(s: StreamInfo, pos: number): string {
 /**
  * Every candidate in playback order: all direct URLs first, then all relay URLs. Streams that need a
  * User-Agent or Referer (relayOnly) skip the direct attempt, because the browser cannot send those
- * headers. A relayOnly stream with no relay URL is dropped.
+ * headers, and so do plain-http URLs on an https page (mixed content). A stream with no direct
+ * attempt and no relay URL is dropped. The automatic plan uses only the first MAX_ATTEMPTS of these.
  */
 function allAttempts(streams: StreamInfo[]): Attempt[] {
   const out: Attempt[] = [];
   streams.forEach((s, pos) => {
-    if (s.url && !s.relayOnly) {
+    if (s.url && !s.relayOnly && !isMixedContent(s.url)) {
       out.push({ key: `${s.index}:direct`, kind: "direct", label: `Direct · ${streamLabel(s, pos)}`, url: s.url, quality: s.quality });
     }
   });
@@ -135,7 +142,7 @@ function IconButton({ label, onClick, children }: { label: string; onClick: () =
   );
 }
 
-export function Player({ streams, autoplay = true, className = "", title, subtitle, artwork }: PlayerProps) {
+export function Player({ streams, autoplay = true, className = "", title, subtitle, artwork, onExhausted }: PlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -158,9 +165,11 @@ export function Player({ streams, autoplay = true, className = "", title, subtit
   const ordered = useMemo(() => orderStreams(streams, saveData), [streams, saveData]);
   const every = useMemo(() => allAttempts(ordered), [ordered]);
   const plan = useMemo(
-    () => (manual === "auto" ? every : every.filter((a) => a.key === manual)),
+    () => (manual === "auto" ? every.slice(0, MAX_ATTEMPTS) : every.filter((a) => a.key === manual)),
     [every, manual],
   );
+  // Sources beyond the automatic cap. Still listed in the picker, so one can be forced by hand.
+  const extra = manual === "auto" ? Math.max(0, every.length - MAX_ATTEMPTS) : 0;
   const planKey = plan.map((a) => a.key).join("|");
   const cur = plan[attempt];
   const exhausted = plan.length === 0 || attempt >= plan.length;
@@ -175,7 +184,7 @@ export function Player({ streams, autoplay = true, className = "", title, subtit
     v.muted = m;
   }, []);
 
-  // Source loading: try plan[attempt]; on fatal error or 8 s without manifest, advance.
+  // Source loading: try plan[attempt]; on fatal error or no manifest within the timeout for its kind, advance.
   useEffect(() => {
     const video = videoRef.current;
     const a = plan[attempt];
@@ -215,7 +224,7 @@ export function Player({ streams, autoplay = true, className = "", title, subtit
 
     timer = window.setTimeout(() => {
       if (!parsed) fail();
-    }, TIMEOUT_MS);
+    }, a.kind === "direct" ? DIRECT_TIMEOUT_MS : RELAY_TIMEOUT_MS);
 
     const startNative = () => {
       // Native HLS (iOS Safari, which has no MSE).
@@ -451,9 +460,22 @@ export function Player({ streams, autoplay = true, className = "", title, subtit
   };
 
   const retry = () => {
-    setAttempt(0);
-    setRun((r) => r + 1);
+    void Promise.resolve(onExhausted?.("retry")).then((handled) => {
+      if (handled === true) return; // parent is remounting us with fresh streams
+      setAttempt(0);
+      setRun((r) => r + 1);
+    });
   };
+
+  // Tell the parent once when the automatic plan is exhausted (it may refresh expired relay URLs).
+  const notifiedRef = useRef(false);
+  useEffect(() => {
+    if (!exhausted) { notifiedRef.current = false; return; }
+    if (notifiedRef.current) return;
+    notifiedRef.current = true;
+    void onExhausted?.("auto");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exhausted]);
 
   const chooseSource = (value: string) => {
     setManual(value);
@@ -574,6 +596,9 @@ export function Player({ streams, autoplay = true, className = "", title, subtit
             ))}
           </select>
         </label>
+        {extra > 0 && (
+          <span className="opacity-70">Automatic tries {MAX_ATTEMPTS} of {every.length} · and {extra} more sources, choose one above</span>
+        )}
         <ReducedDataToggle id="player-reduced-data" onChange={() => setAttempt(0)} />
         {saveData && (
           <span className="rounded border border-emerald-500/50 px-1.5 py-px text-xs font-medium text-emerald-700 dark:text-emerald-400">

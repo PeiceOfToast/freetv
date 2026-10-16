@@ -13,6 +13,7 @@ import { openDb, closeDb, getDb, type Db } from "../src/db/index.js";
 import { buildCatalogFromDir } from "../src/ingest/index.js";
 import { logoRoutes } from "../src/routes/logo.js";
 import {
+  LogoBusyError,
   closeLogoCache,
   getLogo,
   logoCacheStats,
@@ -20,6 +21,7 @@ import {
   normalizeLogoSize,
   publicLogoUrl,
   svgIsSafe,
+  withLogoSlot,
 } from "../src/lib/logo-cache.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -30,6 +32,9 @@ const SAVED = {
   maxMb: config.logoCacheMaxMb,
   maxSize: config.logoMaxSize,
   ttl: logoOptions.negativeTtlMs,
+  allowPrivate: config.fetchAllowPrivate,
+  concurrency: config.logoConcurrency,
+  slotWaitMs: logoOptions.slotWaitMs,
 };
 
 /** Every file under dir except the index, as paths relative to dir. */
@@ -76,6 +81,8 @@ describe("logo cache", () => {
     config.logoCacheMaxMb = 50;
     config.logoMaxSize = 512;
     logoOptions.fetchTimeoutMs = 500;
+    // The upstream is 127.0.0.1; the SSRF guard is covered by its own tests below and in ssrf.test.ts.
+    config.fetchAllowPrivate = true;
 
     pngBuf = await makePng();
     const svgOk = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="red"/></svg>`;
@@ -113,6 +120,14 @@ describe("logo cache", () => {
         case "/text":
           res.writeHead(200, { "content-type": "text/plain" });
           return res.end("hello");
+        case "/hop":
+          res.writeHead(302, { location: "/png-after-hop" });
+          return res.end();
+        case "/png-after-hop":
+          return png();
+        case "/loop":
+          res.writeHead(301, { location: "/loop" });
+          return res.end();
         default:
           res.writeHead(404);
           return res.end();
@@ -163,6 +178,9 @@ describe("logo cache", () => {
     config.logoCacheEnabled = SAVED.enabled;
     config.logoCacheMaxMb = SAVED.maxMb;
     config.logoMaxSize = SAVED.maxSize;
+    config.fetchAllowPrivate = SAVED.allowPrivate;
+    config.logoConcurrency = SAVED.concurrency;
+    logoOptions.slotWaitMs = SAVED.slotWaitMs;
     logoOptions.negativeTtlMs = SAVED.ttl;
     fs.rmSync(dir, { recursive: true, force: true });
   });
@@ -371,6 +389,73 @@ describe("logo cache", () => {
       assert.equal(logoCacheStats().bytes, fs.statSync(path.join(config.logoCacheDir, remaining[0])).size);
     } finally {
       config.logoCacheMaxMb = SAVED.maxMb;
+    }
+  });
+
+  test("upstream redirects are followed hop by hop and a redirect loop gives up (no cached logo)", async () => {
+    setLogo(ids[16], `${base}/hop`);
+    const hit = await getLogo(ids[16], 128, { webp: true });
+    assert.ok(hit, "redirect followed to the PNG");
+    assert.equal(upstreamHits("/hop"), 1);
+    assert.equal(upstreamHits("/png-after-hop"), 1);
+
+    setLogo(ids[17], `${base}/loop`);
+    assert.equal(await getLogo(ids[17], 128, { webp: true }), null);
+    assert.equal(upstreamHits("/loop"), logoOptions.maxRedirects + 1, "one request plus maxRedirects hops");
+  });
+
+  test("private upstream is refused by the SSRF guard when FETCH_ALLOW_PRIVATE is off", async () => {
+    setLogo(ids[14], `${base}/png-guard`);
+    config.fetchAllowPrivate = false;
+    try {
+      assert.equal(await getLogo(ids[14], 256), null);
+      assert.equal(upstreamHits("/png-guard"), 0, "the connection to 127.0.0.1 is never made");
+    } finally {
+      config.fetchAllowPrivate = true;
+    }
+  });
+
+  test("a produce that cannot get an encode slot in time fails with LogoBusyError (503, Retry-After 5)", async () => {
+    config.logoConcurrency = 1;
+    logoOptions.slotWaitMs = 50;
+    setLogo(ids[15], `${base}/png-busy`);
+    // Hold the only slot for longer than the wait.
+    const holder = withLogoSlot(() => new Promise<void>((resolve) => setTimeout(resolve, 400)));
+    try {
+      await assert.rejects(getLogo(ids[15], 256), (err: unknown) => {
+        assert.ok(err instanceof LogoBusyError);
+        assert.equal((err as LogoBusyError).statusCode, 503);
+        assert.equal((err as LogoBusyError).retryAfter, 5);
+        return true;
+      });
+      assert.equal(upstreamHits("/png-busy"), 0, "no work is done before a slot is granted");
+    } finally {
+      await holder;
+      config.logoConcurrency = SAVED.concurrency;
+      logoOptions.slotWaitMs = SAVED.slotWaitMs;
+    }
+  });
+
+  test("a waiter is granted the slot when the holder releases it before the wait ends", async () => {
+    config.logoConcurrency = 1;
+    logoOptions.slotWaitMs = 2000;
+    let running = 0;
+    let peak = 0;
+    const job = () =>
+      withLogoSlot(async () => {
+        running++;
+        peak = Math.max(peak, running);
+        await new Promise((r) => setTimeout(r, 30));
+        running--;
+        return true;
+      });
+    try {
+      const all = await Promise.all([job(), job(), job(), job()]);
+      assert.deepEqual(all, [true, true, true, true]);
+      assert.equal(peak, 1, "never more than LOGO_CONCURRENCY encodes at once");
+    } finally {
+      config.logoConcurrency = SAVED.concurrency;
+      logoOptions.slotWaitMs = SAVED.slotWaitMs;
     }
   });
 });

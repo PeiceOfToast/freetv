@@ -21,8 +21,39 @@ challenge needs it); `DOMAIN` has a typo; you hit Let's Encrypt's rate limit by 
 
 **Plain HTTP works, HTTPS does not.** `DOMAIN` is empty in `.env`. Set it and `docker compose up -d web`.
 
-**502 from Caddy on every page.** `api` is down or still starting (first boot runs an ingest before
-listening? No: it listens immediately, so a 502 means the container is restarting). `docker compose logs api`.
+**502 from Caddy on every page.** The `api` container is not answering, usually because it is restarting.
+`docker compose logs --tail=100 api`. If it reports EACCES on `/data` or `catalog.db`, see
+[EACCES on /data after an update](#eacces-on-data-after-an-update).
+
+## Container and volume problems
+
+### EACCES on /data after an update
+
+**Symptoms.** `docker compose logs epg` shows `cannot write to /data/epg as uid 1000 (EACCES)`, or it keeps
+restarting. The api logs `EACCES` or `SQLITE_CANTOPEN` for `catalog.db` after an update. Nothing reaches the guide or the catalog.
+
+**Cause.** The `freetv_data` volume belongs to another uid. The api, proxy and epg images run as uid 1000 (`node`).
+Installs from before that change have a volume owned by root (the old api) or by 10001 (the old epg).
+
+**Check.** This works even when the api is down:
+
+```sh
+docker run --rm -v freetv_data:/data node:22-bookworm-slim stat -c '%u:%g %n' /data /data/epg
+```
+
+Both should read `1000:1000`. If the volume name differs (you set `COMPOSE_PROJECT_NAME`), use
+`docker volume ls | grep _data` to find it.
+
+**Fix.** Stop the two writers, hand the volume to uid 1000, then start again:
+
+```sh
+docker compose stop api epg
+docker run --rm -v freetv_data:/data node:22-bookworm-slim chown -R 1000:1000 /data
+docker compose up -d
+```
+
+`infra/scripts/update.sh` runs the same `chown` by itself, but only when the owner is wrong, so this is for
+installs that are updated with `docker compose up -d --build` by hand.
 
 ## Catalog problems
 
@@ -56,6 +87,10 @@ too, the stream is dead or geo-blocked; nothing to fix.
 **Relay URLs return 403.** `PROXY_SECRET` differs between `api` and `proxy` (both read it from `.env`;
 restart both after changing it), or the URL was built for a different `PROXY_PUBLIC_PATH`.
 
+**Relay URLs return 403 after a day or a week.** Relay URLs now expire: 24 h on channel pages and 7 days in M3U exports
+(`PROXY_URL_TTL_SECONDS`, `PROXY_EXPORT_TTL_SECONDS`). Re-open the channel, or download the playlist again, to get fresh URLs.
+A 403 right after you changed `PROXY_SECRET` is the same thing: the old URLs were signed with the old key.
+
 **Relay returns 403 for a stream whose host is an IP address.** The SSRF guard refuses private,
 loopback and link-local ranges. Streams on public IPs are fine. For a LAN-only test instance set
 `PROXY_ALLOW_PRIVATE=true` (never on the internet).
@@ -78,6 +113,11 @@ source automatically. Nothing to fix.
 with `EPG_SITES=all` the first run takes hours), or every site failed (the log ends with a summary).
 A grab that produced no programmes is discarded on purpose and the previous guide, if any, is kept.
 
+**The grabber is killed (exit 137) or the log says `grabber exited with N; keeping previous guide`.** The
+grabber ran out of memory. The `epg` container is limited to 4 GB, and `EPG_SITES=all` holds a large run in memory
+before it writes the XML. Check with `docker compose logs epg | grep -E 'exited|published|no programmes'` and
+`docker stats epg`. Fix it with a curated `EPG_SITES` list, or `EPG_SPLIT_BY_SITE=true`.
+
 **The grab finished but `lastEpgImport` did not change.** The api polls `EPG_FILE` every 60 s and
 compares mtime/size. Check the file exists in the shared volume:
 `docker compose exec api ls -la /data/epg/`. If `api` and `epg` mount different volumes (edited
@@ -89,7 +129,7 @@ site get data (about 11,700 of the ~10,000 with streams overlap partially). The 
 
 **Grab is too heavy for the VM.** Lower `EPG_MAX_CONNECTIONS` (10 → 4), reduce `EPG_DAYS` (2 → 1),
 narrow `EPG_SITES`, or raise `EPG_INTERVAL_HOURS`. Or set `EPG_SPLIT_BY_SITE=true` so one slow site
-cannot stall the whole run.
+cannot stall the whole run. Those are the settings to change before you raise the memory limit.
 
 **Programme times are off by hours.** The guide stores UTC; the UI renders in the viewer's time zone.
 If the times are wrong *and* consistent, the source site publishes a wrong offset; pick another site
@@ -101,15 +141,30 @@ for that channel by excluding the bad one with `EPG_EXCLUDE_SITES`.
 a transient npm registry failure. Re-run. If it persists on an exotic arch, prebuilt binaries may be
 missing; the image falls back to compiling and needs `python3 make g++`, which the Dockerfile installs.
 
-**`epg` image build fails at `npm install` in iptv-org/epg.** Their `postinstall` downloads API data.
-Network at build time is required. Behind a corporate proxy set `HTTP_PROXY`/`HTTPS_PROXY` as build args.
+**The `epg` image fails to build, and the rest of the stack is still up.** That is expected: `epg` builds last
+and on its own. Read the build output (`docker compose up -d --build epg`) and retry. The three usual causes:
+
+- `git fetch` of `EPG_REF` fails. Network to github.com, or the pinned commit is gone upstream. Pick another
+  commit (see `EPG_REF` in `.env.example`).
+- `npm install` in iptv-org/epg fails. Their `postinstall` downloads API data, so network at build time is required.
+  Behind a corporate proxy set `HTTP_PROXY`/`HTTPS_PROXY` as build args.
+- `fetch-api-data.mjs --strict` fails. The API mirror is unreachable. Retry later or check
+  `API_MIRROR_BASE` in `apps/epg/Dockerfile`.
+
+Until `epg` builds, the guide stays empty and the rest of the site works.
 
 **CI's image job fails with "manifest unknown" when pulling on the VM.** Your fork has not pushed
 images yet (the job only pushes on `main`/tags), or `GITHUB_REPOSITORY_OWNER` in `.env` does not
-match your GitHub user/org (it must be lowercase). Use `docker compose up -d --build` instead.
+match your GitHub user/org (it must be lowercase). Use `docker compose up -d --build` instead. An empty
+`GITHUB_REPOSITORY_OWNER` is the default and means "build locally, pull nothing".
 
 **`infra/scripts/update.sh` refuses to run.** `PROXY_SECRET` still starts with `change-me`. Run
 `infra/scripts/gen-secret.sh --write`.
+
+**`/logo/*` is cached as missing for a week.** The api sets the logo cache headers (7 days for a logo, 5 minutes for a
+miss). Caddy must not add a second `Cache-Control` on that route. Check with `curl -sI https://$DOMAIN/logo/<channel-id>`:
+there should be one `Cache-Control` header. If there are two, the Caddyfile has an extra header line; remove it in both
+`infra/caddy/Caddyfile` and `apps/web/Caddyfile` (CI diffs them) and run `docker compose restart web`.
 
 **Caddyfile edits are ignored.** Edit `infra/caddy/Caddyfile` (bind-mounted) and reload:
 `docker compose exec web caddy reload --config /etc/caddy/Caddyfile`. `apps/web/Caddyfile` is only

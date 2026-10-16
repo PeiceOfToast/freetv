@@ -1,7 +1,7 @@
 # epg (EPG grabber container)
 
 Produces `/data/epg/guide.xml`, an XMLTV file, on a schedule. The `api` container imports it
-(`EPG_FILE`, polled by mtime). The container is a loop around the upstream grabber
+(`EPG_OUTPUT`, polled by mtime). The container is a loop around the upstream grabber
 [iptv-org/epg](https://github.com/iptv-org/epg) and runs as a non-root user.
 
 ## How it works

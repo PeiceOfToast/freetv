@@ -8,7 +8,7 @@ import type { FastifyInstance } from "fastify";
 import { config } from "../src/config.js";
 import { openDb, closeDb } from "../src/db/index.js";
 import { buildServer } from "../src/server.js";
-import { acceptsGzip, isNotModified } from "../src/lib/export-guide.js";
+import { acceptsGzip, guideEtag, gzipIsCurrent, isNotModified } from "../src/lib/export-guide.js";
 
 config.logLevel = "silent";
 
@@ -112,6 +112,59 @@ describe("GET /api/guide.xml", () => {
     assert.notEqual(res.headers.etag, etagBefore);
     assert.match(res.body, /updated/);
   });
+
+  test("serves the prebuilt guide.xml.gz with its own validators when it is not older than the source", async () => {
+    const srcMtime = fs.statSync(file).mtime;
+    const gzFile = `${file}.gz`;
+    fs.writeFileSync(gzFile, zlib.gzipSync(fs.readFileSync(file)));
+    fs.utimesSync(gzFile, srcMtime, srcMtime);
+    try {
+      const gzSt = fs.statSync(gzFile);
+      const res = await get({ "accept-encoding": "gzip" });
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.headers["content-encoding"], "gzip");
+      assert.equal(res.headers["content-length"], String(gzSt.size), "size of the file on disk");
+      assert.equal(res.headers["last-modified"], gzSt.mtime.toUTCString());
+      assert.equal(res.headers.etag, guideEtag(gzSt));
+      assert.equal(zlib.gunzipSync(res.rawPayload).toString("utf8"), fs.readFileSync(file, "utf8"));
+
+      const cached = await get({ "accept-encoding": "gzip", "if-none-match": String(res.headers.etag) });
+      assert.equal(cached.statusCode, 304);
+    } finally {
+      fs.rmSync(gzFile, { force: true });
+    }
+  });
+
+  test("falls back to on-the-fly gzip when the .gz is older than the source", async () => {
+    const srcMtime = fs.statSync(file).mtime;
+    const gzFile = `${file}.gz`;
+    fs.writeFileSync(gzFile, zlib.gzipSync("stale"));
+    fs.utimesSync(gzFile, new Date(srcMtime.getTime() - 60_000), new Date(srcMtime.getTime() - 60_000));
+    try {
+      const res = await get({ "accept-encoding": "gzip" });
+      assert.equal(res.headers["content-encoding"], "gzip");
+      assert.equal(res.headers["content-length"], undefined, "on-the-fly gzip has no Content-Length");
+      assert.equal(res.headers.etag, guideEtag(fs.statSync(file)), "validators come from the source file");
+      assert.equal(zlib.gunzipSync(res.rawPayload).toString("utf8"), fs.readFileSync(file, "utf8"));
+    } finally {
+      fs.rmSync(gzFile, { force: true });
+    }
+  });
+
+  test("clients that do not accept gzip get the source file even when a current .gz exists", async () => {
+    const srcMtime = fs.statSync(file).mtime;
+    const gzFile = `${file}.gz`;
+    fs.writeFileSync(gzFile, zlib.gzipSync(fs.readFileSync(file)));
+    fs.utimesSync(gzFile, srcMtime, srcMtime);
+    try {
+      const res = await get({ "accept-encoding": "identity" });
+      assert.equal(res.headers["content-encoding"], undefined);
+      assert.equal(res.headers["content-length"], String(fs.statSync(file).size));
+      assert.equal(res.headers.etag, guideEtag(fs.statSync(file)));
+    } finally {
+      fs.rmSync(gzFile, { force: true });
+    }
+  });
 });
 
 describe("guide helpers", () => {
@@ -123,6 +176,12 @@ describe("guide helpers", () => {
     assert.equal(acceptsGzip("identity"), false);
     assert.equal(acceptsGzip(undefined), false);
     assert.equal(acceptsGzip(["br", "gzip"]), true);
+  });
+
+  test("gzipIsCurrent is true for equal or newer copies, false when the source is newer", () => {
+    assert.equal(gzipIsCurrent({ mtimeMs: 1000.4 }, { mtimeMs: 1000.9 }), true, "same whole millisecond");
+    assert.equal(gzipIsCurrent({ mtimeMs: 2000 }, { mtimeMs: 1000 }), true);
+    assert.equal(gzipIsCurrent({ mtimeMs: 1000 }, { mtimeMs: 1001 }), false);
   });
 
   test("isNotModified ignores invalid dates and missing headers", () => {

@@ -35,6 +35,11 @@ cp .env.example .env
 infra/scripts/gen-secret.sh --write        # generates PROXY_SECRET (required)
 ```
 
+If you plan to use the Android TV app, copy its `assetlinks.json` into `infra/caddy/` now and again after
+every fresh clone. The file is git-ignored on purpose (it holds your app's signing fingerprint), so a clone never
+contains it. Caddy serves it from that directory. Without the file, the TV app's domain verification fails. See
+[apps/tv/README.md](../apps/tv/README.md).
+
 Edit `.env` and set at least:
 
 ```
@@ -48,18 +53,24 @@ Everything else has a sensible default. The two decisions worth making now:
   your server relaying video for visitors (fewer channels will play). Drop `epg` if you do not want a
   TV guide (saves CPU; the grabber is the heaviest thing here).
 - `EPG_SITES=all` — the default grabs a guide for every channel that has one (about 11,700 channels
-  from ~190 sites, several hours per run). To start small, set e.g. `EPG_SITES=tvguide.com,freeview.co.uk`.
+  from ~190 sites, several hours per run). It needs the 4 GB the `epg` container may use. On a VM with less
+  memory, start with a short list, e.g. `EPG_SITES=tvguide.com,freeview.co.uk`, and add `EPG_SPLIT_BY_SITE=true`
+  so one slow site cannot stall the whole run.
 
 ## 4. Start it
 
 ```sh
 docker compose up -d --build
-docker compose logs -f api        # wait for "catalog rebuilt" (first ingest downloads ~60 MB)
+# The first ingest downloads ~60 MB. Step 5 shows when it has finished (channels > 0 in /api/meta).
 ```
 
-Build takes a few minutes the first time (it compiles the UI and installs the EPG grabber).
+Build takes a few minutes the first time (it compiles the UI and installs the EPG grabber). The core services
+start first, and `epg` builds last. If the grabber fails to build, the site still comes up; retry it with
+`docker compose up -d --build epg` and read `docker compose logs epg` if it fails again.
+
 If you would rather pull prebuilt images, set `GITHUB_REPOSITORY_OWNER=<you>` in `.env` once your
 fork's GitHub Actions has pushed images to GHCR, then `docker compose pull && docker compose up -d`.
+While `GITHUB_REPOSITORY_OWNER` is empty, nothing is pulled and every image is built here.
 
 ## 5. Check it
 
@@ -80,5 +91,5 @@ new file within a minute and `/api/meta` shows `programmes` > 0.
 infra/scripts/update.sh           # git pull, rebuild/pull images, restart, prune
 ```
 
-Backups, log rotation, resource limits and everything else routine: [OPERATIONS.md](OPERATIONS.md).
+Backups (`infra/scripts/backup.sh`), resource limits and everything else routine: [OPERATIONS.md](OPERATIONS.md).
 When something is wrong: [TROUBLESHOOTING.md](TROUBLESHOOTING.md).

@@ -44,7 +44,7 @@ docker build -t freetv-proxy apps/proxy
 
 Checks run in this order, and the first failure answers:
 
-1. Signature and payload checks (`403`/`400`). Unsigned requests never use rate-limit tokens.
+1. Signature, payload and expiry checks (`403`/`400`). Unsigned requests never use rate-limit tokens. A missing or passed `exp` is `403 {"error":"expired"}` (playlists at `exp`, segments at `exp` + 600 s); `exp` more than 30 days ahead is `403 {"error":"invalid expiry"}`.
 2. Rate limit per client IP (`429`, `{"error":"rate limited"}`, `Retry-After` in seconds).
 3. Target checks (`403`).
 4. Per-IP concurrency (`429`, `Retry-After: 2`).

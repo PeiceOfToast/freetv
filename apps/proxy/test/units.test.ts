@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { isBlockedAddress, isBlockedHostname } from "../src/ssrf.js";
 import { loadConfig } from "../src/config.js";
 import { rewritePlaylist, isPlaylist } from "../src/playlist.js";
-import { makeProxyUrl, signPayload, verifySignature } from "../src/sign.js";
+import { checkExpiry, makeProxyUrl, signPayload, verifySignature, MAX_EXP_AHEAD_SECONDS, SEGMENT_GRACE_SECONDS } from "../src/sign.js";
 
 describe("address classification", () => {
   it("blocks private, loopback, link-local and metadata ranges", () => {
@@ -45,19 +45,43 @@ describe("config", () => {
 });
 
 describe("signing", () => {
-  it("makeProxyUrl output verifies and carries ua/r only when given", () => {
-    const url = makeProxyUrl("k", "/proxy", "https://a.example/x.m3u8", null, null);
+  it("makeProxyUrl output verifies and carries ua/r only when given, always with exp", () => {
+    const url = makeProxyUrl("k", "/proxy", "https://a.example/x.m3u8", null, null, 1_900_000_000);
     const [, , sig, payload] = url.split("/");
     assert.ok(verifySignature("k", payload, sig));
-    assert.deepEqual(JSON.parse(Buffer.from(payload, "base64url").toString()), { u: "https://a.example/x.m3u8" });
+    assert.deepEqual(JSON.parse(Buffer.from(payload, "base64url").toString()), { u: "https://a.example/x.m3u8", exp: 1_900_000_000 });
     assert.equal(verifySignature("other", payload, sig), false);
     assert.equal(verifySignature("k", payload, signPayload("k", "tampered")), false);
   });
 });
 
+describe("expiry", () => {
+  const now = 1_800_000_000;
+  it("playlists must be within exp", () => {
+    assert.equal(checkExpiry(now + 1, now, "playlist"), "ok");
+    assert.equal(checkExpiry(now, now, "playlist"), "ok");
+    assert.equal(checkExpiry(now - 1, now, "playlist"), "expired");
+  });
+
+  it("segments get the grace period after exp and no more", () => {
+    assert.equal(checkExpiry(now - SEGMENT_GRACE_SECONDS, now, "segment"), "ok");
+    assert.equal(checkExpiry(now - SEGMENT_GRACE_SECONDS - 1, now, "segment"), "expired");
+  });
+
+  it("a missing exp is never ok, for either kind", () => {
+    assert.equal(checkExpiry(undefined, now, "playlist"), "missing");
+    assert.equal(checkExpiry(undefined, now, "segment"), "missing");
+  });
+
+  it("exp more than 30 days ahead is invalid", () => {
+    assert.equal(checkExpiry(now + MAX_EXP_AHEAD_SECONDS, now, "playlist"), "ok");
+    assert.equal(checkExpiry(now + MAX_EXP_AHEAD_SECONDS + 1, now, "playlist"), "invalid");
+  });
+});
+
 describe("playlist helpers", () => {
   const base = new URL("https://cdn.example/a/b/master.m3u8");
-  const opts = { secret: "k", publicPath: "/proxy" };
+  const opts = { secret: "k", publicPath: "/proxy", exp: 1_900_000_000 };
 
   it("leaves comments, blank lines and non-http URIs alone", () => {
     const out = rewritePlaylist("#EXTM3U\n\n#EXT-X-KEY:METHOD=AES-128,URI=\"skd://x\"\nskd://y\nsub.m3u8", base, opts);

@@ -6,7 +6,7 @@ import { clientIp, makeIpHasher } from "./clientip.js";
 import { createMetrics } from "./metrics.js";
 import { isPlaylist, rewritePlaylist } from "./playlist.js";
 import { TokenBucketLimiter } from "./ratelimit.js";
-import { verifySignature } from "./sign.js";
+import { checkExpiry, verifySignature } from "./sign.js";
 import { TargetForbiddenError } from "./ssrf.js";
 import { createDispatcher, fetchUpstream, UpstreamError } from "./upstream.js";
 
@@ -60,7 +60,9 @@ function json(res: ServerResponse, status: number, body: { error: string }, ctx:
   res.end(text);
 }
 
-interface Payload { u: string; ua?: string; r?: string }
+interface Payload { u: string; ua?: string; r?: string; exp?: number }
+
+const nowSec = () => Math.floor(Date.now() / 1000);
 
 function decodePayload(payload: string): Payload | null {
   try {
@@ -70,7 +72,8 @@ function decodePayload(payload: string): Payload | null {
     if (typeof p.u !== "string") return null;
     if (p.ua !== undefined && (typeof p.ua !== "string" || p.ua.length > 512)) return null;
     if (p.r !== undefined && typeof p.r !== "string") return null;
-    return { u: p.u, ua: p.ua as string | undefined, r: p.r as string | undefined };
+    if (p.exp !== undefined && !Number.isSafeInteger(p.exp)) return null;
+    return { u: p.u, ua: p.ua as string | undefined, r: p.r as string | undefined, exp: p.exp as number | undefined };
   } catch {
     return null;
   }
@@ -125,6 +128,8 @@ export function createProxyServer(config: ProxyConfig): ProxyServer {
 
   const log = (ctx: ReqContext, status: number) => {
     if (config.logLevel === "silent") return;
+    // warn: only log problems (4xx/5xx); info: every request.
+    if (config.logLevel === "warn" && status < 400) return;
     const ms = Date.now() - ctx.started;
     console.log(`proxy ${ctx.method} ${status} ${ctx.host} bytes=${ctx.bytes} ms=${ms} ip=${ctx.ip} kind=${ctx.kind}`);
   };
@@ -173,6 +178,14 @@ export function createProxyServer(config: ProxyConfig): ProxyServer {
     const payload = decodePayload(payloadB64);
     if (!payload) return json(res, 400, { error: "invalid payload" }, ctx);
     ctx.kind = guessKind(payload.u);
+
+    // Expiry is checked before rate limiting, so expired requests never use tokens. Playlists must be
+    // within exp; segments also get a grace period. The kind is guessed from the URL here and confirmed
+    // from the response below.
+    const exp = payload.exp;
+    const early = checkExpiry(exp, nowSec(), ctx.kind === "playlist" ? "playlist" : "segment");
+    if (early === "invalid") return json(res, 403, { error: "invalid expiry" }, ctx);
+    if (early !== "ok" || exp === undefined) return json(res, 403, { error: "expired" }, ctx);
 
     // Rate limit after the signature check, so only requests the api actually issued consume tokens.
     if (limiter) {
@@ -249,6 +262,11 @@ export function createProxyServer(config: ProxyConfig): ProxyServer {
     ctx.kind = isPlaylist(contentType, up.url) ? "playlist" : "segment";
 
     if (ctx.kind === "playlist") {
+      // The URL guess said segment (no .m3u8 path) but the response is a playlist: the stricter rule applies.
+      if (checkExpiry(exp, nowSec(), "playlist") !== "ok") {
+        up.body.dump().catch(() => {});
+        return json(res, 403, { error: "expired" }, ctx);
+      }
       if (contentLength && Number(contentLength) > config.maxPlaylistBytes) {
         up.body.dump().catch(() => {});
         metrics.upstreamErrors.inc({ reason: "too_large" });
@@ -272,6 +290,7 @@ export function createProxyServer(config: ProxyConfig): ProxyServer {
         publicPath: config.publicPath,
         ua: payload.ua ?? null,
         r: referer,
+        exp,
       });
       ctx.bytes = Buffer.byteLength(out);
       res.writeHead(200, {

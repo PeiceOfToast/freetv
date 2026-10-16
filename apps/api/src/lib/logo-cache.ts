@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { fetch } from "undici";
 import sharp from "sharp";
 import { config } from "../config.js";
 import { getDb } from "../db/index.js";
 import { prep } from "./sql.js";
+import { guardedFetch } from "./ssrf.js";
 
 // Disk cache for channel logos. Served by routes/logo.ts; see docs/API.md "Logos" and
 // docs/notes/api-logos.md for the design.
@@ -19,7 +19,85 @@ export const logoOptions = {
   maxSourceBytes: 5 * 1024 * 1024,
   negativeTtlMs: 6 * 60 * 60 * 1000,
   indexFlushMs: 60_000,
+  /** A produce() that cannot get a slot within this long fails with LogoBusyError (HTTP 503, Retry-After: 5). */
+  slotWaitMs: 10_000,
+  /** Redirect hops followed for an upstream logo; each hop is re-checked by the SSRF guard. */
+  maxRedirects: 5,
 };
+
+/** Decoder memory bound per image (pixels), and libvips threads for the whole process. */
+const SHARP_LIMIT_PIXELS = 4_000_000;
+sharp.concurrency(2);
+
+/** Thrown by getLogo when the encode queue stays full past logoOptions.slotWaitMs. Callers answer 503 + Retry-After. */
+export class LogoBusyError extends Error {
+  readonly statusCode = 503;
+  readonly retryAfter = 5;
+  constructor() {
+    super("logo renderer busy, retry shortly");
+  }
+}
+
+/**
+ * Counting semaphore with a bounded wait. FIFO. A slot handed to a waiter is never counted twice.
+ * Re-created when LOGO_CONCURRENCY changes (tests).
+ */
+class Semaphore {
+  private active = 0;
+  private readonly queue: Array<() => void> = [];
+  constructor(readonly max: number) {}
+
+  acquire(waitMs: number): Promise<() => void> {
+    if (this.active < this.max) {
+      this.active++;
+      return Promise.resolve(this.releaser());
+    }
+    return new Promise((resolve, reject) => {
+      const waiter = () => {
+        clearTimeout(timer);
+        resolve(this.releaser());
+      };
+      const timer = setTimeout(() => {
+        const i = this.queue.indexOf(waiter);
+        if (i >= 0) {
+          this.queue.splice(i, 1);
+          reject(new LogoBusyError());
+        }
+      }, waitMs);
+      this.queue.push(waiter);
+    });
+  }
+
+  private releaser(): () => void {
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const next = this.queue.shift();
+      if (next) next(); // the slot passes straight to the next waiter
+      else this.active--;
+    };
+  }
+}
+
+let semaphore: Semaphore | null = null;
+
+/** Global cap on concurrent produce() calls (decode + encode), across all channels and sizes. */
+function slots(): Semaphore {
+  const max = Math.max(1, Math.floor(config.logoConcurrency));
+  if (!semaphore || semaphore.max !== max) semaphore = new Semaphore(max);
+  return semaphore;
+}
+
+/** Runs fn inside one encode slot. Exported for tests (to hold a slot) and used by produce(). */
+export async function withLogoSlot<T>(fn: () => Promise<T>): Promise<T> {
+  const release = await slots().acquire(logoOptions.slotWaitMs);
+  try {
+    return await fn();
+  } finally {
+    release();
+  }
+}
 
 const CONTENT_TYPES = { webp: "image/webp", png: "image/png", svg: "image/svg+xml" } as const;
 type Ext = keyof typeof CONTENT_TYPES;
@@ -78,6 +156,7 @@ export function normalizeLogoSize(requested: number | undefined): number {
 /**
  * Returns the cached logo file for a channel at the given size, fetching and producing it on a miss.
  * Null when the channel has no logo, the logo is unavailable upstream (negative-cached), or the cache is disabled.
+ * Throws LogoBusyError (statusCode 503, retryAfter 5) when the encode queue stays full past logoOptions.slotWaitMs.
  */
 export async function getLogo(channelId: string, size: number, opts: GetLogoOptions = {}): Promise<LogoHit | null> {
   if (!config.logoCacheEnabled) return null;
@@ -98,7 +177,7 @@ export async function getLogo(channelId: string, size: number, opts: GetLogoOpti
     const hit = findHit(st, base, sz, wantWebp ? ["webp", "svg"] : ["png", "svg"], src);
     if (hit) return hit;
     if (missFresh(st, base, src)) return null;
-    return produce(st, { base, url, src, size: sz, wantWebp });
+    return withLogoSlot(() => produce(st, { base, url, src, size: sz, wantWebp }));
   });
 }
 
@@ -161,12 +240,28 @@ function sourceOnce(base: string, url: string, src: string): Promise<Buffer | nu
   return singleFlight(`src|${base}|${src}`, () => download(url).catch(() => null));
 }
 
+/**
+ * Upstream GET with the SSRF guard on every hop. Redirects are followed by hand so that each Location
+ * is checked (and connected through the guarded lookup) before it is fetched.
+ */
 async function download(url: string): Promise<Buffer> {
   const max = logoOptions.maxSourceBytes;
-  const res = await fetch(url, {
-    headers: { "user-agent": LOGO_UA, accept: "image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5" },
-    signal: AbortSignal.timeout(logoOptions.fetchTimeoutMs),
-  });
+  const headers = { "user-agent": LOGO_UA, accept: "image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5" };
+  const signal = AbortSignal.timeout(logoOptions.fetchTimeoutMs);
+  let target = new URL(url);
+  let res;
+  for (let hop = 0; ; hop++) {
+    res = await guardedFetch(target, { headers, signal });
+    const location = res.headers.get("location");
+    if (res.status >= 300 && res.status < 400 && location) {
+      await res.body?.cancel().catch(() => undefined);
+      if (hop >= logoOptions.maxRedirects) throw new Error("too many redirects");
+      target = new URL(location, target);
+      if (target.protocol !== "http:" && target.protocol !== "https:") throw new Error("redirect to unsupported URL");
+      continue;
+    }
+    break;
+  }
   if (!res.ok) {
     await res.body?.cancel().catch(() => undefined);
     throw new Error(`upstream ${res.status}`);
@@ -195,7 +290,8 @@ async function download(url: string): Promise<Buffer> {
 }
 
 async function resize(input: Buffer, size: number, ext: "webp" | "png"): Promise<Buffer> {
-  const img = sharp(input, { limitInputPixels: 50_000_000 })
+  // Logos are small; anything above 4 MP is refused (decode memory), which counts as a miss.
+  const img = sharp(input, { limitInputPixels: SHARP_LIMIT_PIXELS })
     .rotate()
     .resize({ width: size, height: size, fit: "inside", withoutEnlargement: true });
   return ext === "webp"

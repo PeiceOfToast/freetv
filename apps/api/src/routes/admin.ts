@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import fs from "node:fs";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { config } from "../config.js";
@@ -12,13 +12,22 @@ import { Gauge, HttpMetrics, renderMetrics } from "../lib/metrics.js";
 
 const SKIP_OVERRIDE = Symbol.for("skip-override");
 
-function tokenOk(req: FastifyRequest): boolean {
-  if (config.adminToken === "") return false;
-  const auth = String(req.headers["authorization"] ?? "");
-  const want = Buffer.from(`Bearer ${config.adminToken}`);
-  const got = Buffer.from(auth);
-  return got.length === want.length && timingSafeEqual(got, want);
+/**
+ * Constant-time check of an `Authorization` header against `Bearer <token>`. Both sides are hashed first
+ * so the comparison takes the same time whatever the lengths. An empty token never matches.
+ */
+export function bearerTokenOk(header: unknown, token: string): boolean {
+  if (token === "") return false;
+  const digest = (s: string) => createHash("sha256").update(s).digest();
+  return timingSafeEqual(digest(String(header ?? "")), digest(`Bearer ${token}`));
 }
+
+function tokenOk(req: FastifyRequest): boolean {
+  return bearerTokenOk(req.headers["authorization"], config.adminToken);
+}
+
+/** How long the /metrics gauges and the /api/meta body are reused. */
+export const GAUGE_TTL_MS = 15_000;
 
 const num = (v: string | null | undefined): number | null => (v === null || v === undefined ? null : Number(v));
 
@@ -91,7 +100,7 @@ export function collectStatus(db: Db = getDb()): AdminStatus {
       withStreams: counts.channelsWithStreams ?? live.withStreams,
       streams: counts.streams ?? live.streams,
       lastIngest: num(getMeta("last_ingest")),
-      lastIngestMs: null, // not recorded by ingest yet; see docs/notes/admin.md
+      lastIngestMs: num(getMeta("last_ingest_ms")), // duration of the last catalog rebuild
       source: ingestSource(),
     },
     epg: {
@@ -115,6 +124,40 @@ export function collectStatus(db: Db = getDb()): AdminStatus {
   };
 }
 
+/** The numbers /metrics exposes as gauges. Computed at most once per GAUGE_TTL_MS (COUNT(*) over the catalog is not free). */
+interface GaugeValues {
+  channels: number;
+  withStreams: number;
+  online: number;
+  programmes: number;
+  lastIngest: number;
+  lastEpgImport: number;
+  lastProbe: number;
+}
+let gaugeCache: { at: number; values: GaugeValues } | null = null;
+
+function gaugeValues(): GaugeValues {
+  const now = Date.now();
+  if (gaugeCache && now - gaugeCache.at < GAUGE_TTL_MS) return gaugeCache.values;
+  const s = collectStatus();
+  const values: GaugeValues = {
+    channels: s.catalog.channels,
+    withStreams: s.catalog.withStreams,
+    online: s.health.online,
+    programmes: s.epg.programmes,
+    lastIngest: s.catalog.lastIngest ?? 0,
+    lastEpgImport: s.epg.lastImport ?? 0,
+    lastProbe: s.health.lastProbe ?? 0,
+  };
+  gaugeCache = { at: now, values };
+  return values;
+}
+
+/** Test hook: drop the cached /metrics gauges so the next scrape reads the database. */
+export function resetMetricsCache(): void {
+  gaugeCache = null;
+}
+
 // Encapsulation: without this flag the onResponse hook below would only see routes inside this plugin.
 // It is the flag fastify-plugin sets; it must be on the function before register() reads it.
 Object.defineProperty(adminRoutes, SKIP_OVERRIDE, { value: true });
@@ -132,20 +175,20 @@ export async function adminRoutes(app: FastifyInstance) {
   });
 
   app.get("/metrics", async (_req, reply) => {
-    const s = collectStatus();
+    const s = gaugeValues();
     const gauge = (name: string, help: string, v: number) => {
       const g = new Gauge(name, help);
       g.set(v);
       return g;
     };
     const body = renderMetrics([
-      gauge("freetv_channels_total", "Channels in the catalog (blocked included).", s.catalog.channels),
-      gauge("freetv_channels_with_streams", "Channels with at least one stream.", s.catalog.withStreams),
-      gauge("freetv_streams_online", "Streams whose last probe was online.", s.health.online),
-      gauge("freetv_programmes_total", "Guide programmes stored.", s.epg.programmes),
-      gauge("freetv_ingest_last_timestamp", "Unix time of the last catalog rebuild (0 = never).", s.catalog.lastIngest ?? 0),
-      gauge("freetv_epg_last_import_timestamp", "Unix time of the last XMLTV import (0 = never).", s.epg.lastImport ?? 0),
-      gauge("freetv_probe_last_timestamp", "Unix time of the last stream probe pass (0 = never).", s.health.lastProbe ?? 0),
+      gauge("freetv_channels_total", "Channels in the catalog (blocked included).", s.channels),
+      gauge("freetv_channels_with_streams", "Channels with at least one stream.", s.withStreams),
+      gauge("freetv_streams_online", "Streams whose last probe was online.", s.online),
+      gauge("freetv_programmes_total", "Guide programmes stored.", s.programmes),
+      gauge("freetv_ingest_last_timestamp", "Unix time of the last catalog rebuild (0 = never).", s.lastIngest),
+      gauge("freetv_epg_last_import_timestamp", "Unix time of the last XMLTV import (0 = never).", s.lastEpgImport),
+      gauge("freetv_probe_last_timestamp", "Unix time of the last stream probe pass (0 = never).", s.lastProbe),
       http.requests,
       http.duration,
     ]);

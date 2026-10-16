@@ -15,7 +15,7 @@ export interface ProxyConfig {
   trustProxy: boolean;
   /** DEV ONLY. Lets upstreams on private/loopback addresses through (tests use it). */
   allowPrivate: boolean;
-  logLevel: "silent" | "info";
+  logLevel: "silent" | "warn" | "info";
   /** Playlist size cap (bytes). Fixed by contract. */
   maxPlaylistBytes: number;
 }
@@ -79,7 +79,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ProxyConfig {
     rateLimitBurst: int("PROXY_RATE_LIMIT_BURST", env, 60),
     trustProxy: strictBool("PROXY_TRUST_PROXY", env, true),
     allowPrivate: bool("PROXY_ALLOW_PRIVATE", env, false),
-    logLevel: env.LOG_LEVEL === "silent" ? "silent" : "info",
+    logLevel: env.LOG_LEVEL === "silent" ? "silent" : env.LOG_LEVEL === "warn" || env.LOG_LEVEL === "error" ? "warn" : "info",
     maxPlaylistBytes: 2 * 1024 * 1024,
   };
 }

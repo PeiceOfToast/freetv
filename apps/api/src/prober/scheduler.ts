@@ -159,8 +159,11 @@ export function applyResults(db: Db, batch: Array<{ url: string; result: ProbeRe
       last_checked = excluded.last_checked, last_online = excluded.last_online, error = excluded.error`);
   const mirror = db.prepare("UPDATE streams SET status = @published, last_checked = @now WHERE url = @url");
   const channelsOf = db.prepare("SELECT DISTINCT channel FROM streams WHERE url = ?");
+  // Same denormalisation as ingest (build.ts): channels.last_checked backs sort=updated.
   const recount = db.prepare(
-    "UPDATE channels SET online_count = (SELECT COUNT(*) FROM streams s WHERE s.channel = channels.id AND s.status = 'online') WHERE id = ?",
+    `UPDATE channels SET online_count = (SELECT COUNT(*) FROM streams s WHERE s.channel = channels.id AND s.status = 'online'),
+       last_checked = (SELECT MAX(s.last_checked) FROM streams s WHERE s.channel = channels.id)
+     WHERE id = ?`,
   );
 
   db.transaction(() => {

@@ -3,8 +3,8 @@
 // /data/epg/guide.xml atomically, sleep, repeat. See README.md for the environment variables.
 
 import { spawn } from 'node:child_process';
-import { createReadStream } from 'node:fs';
-import { mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { constants, createReadStream } from 'node:fs';
+import { access, mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import readline from 'node:readline';
 import { generate, renderChannelsXml } from './generate-channels.mjs';
@@ -286,7 +286,16 @@ function shutdown(signal) {
 }
 
 async function main() {
-  await mkdir(path.dirname(cfg.outFile), { recursive: true });
+  // An existing /data/epg is fine as long as this uid can write to it. If the shared volume was
+  // seeded with another owner, fail once with the fix instead of a grabber error on every run.
+  const outDir = path.dirname(cfg.outFile);
+  await mkdir(outDir, { recursive: true });
+  await access(outDir, constants.W_OK).catch(err => {
+    throw new Error(
+      `cannot write to ${outDir} as uid ${process.getuid()} (${err.code}). The data volume is owned ` +
+        'by another uid; see docs/TROUBLESHOOTING.md ("EACCES on /data").'
+    );
+  });
   await mkdir(cfg.workDir, { recursive: true });
 
   log(

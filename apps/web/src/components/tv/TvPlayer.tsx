@@ -1,10 +1,11 @@
 // Chrome-less HLS player for the 10-foot UI. Uses hls.js directly (no controls, no hover UI).
 // Tries direct URLs, then relay URLs (or the reverse when preferRelay), advancing on fatal
-// error or an 8 s timeout. Calls onState so the watch overlay can show what is happening.
+// error or a timeout (5 s for direct, 8 s for relay). Calls onState so the watch overlay can show what is happening.
 import { useEffect, useMemo, useRef, useState } from "react";
 import Hls from "hls.js";
 import type { StreamInfo } from "@/lib/api";
 import { tvSettings } from "./tvSettings";
+import { DIRECT_TIMEOUT_MS, MAX_ATTEMPTS, RELAY_TIMEOUT_MS, isMixedContent } from "@/components/player/plan";
 
 export interface TvPlayerState {
   playing: boolean;
@@ -31,10 +32,13 @@ function preferQuality(streams: StreamInfo[], quality: string): StreamInfo[] {
 
 function planFor(streams: StreamInfo[], preferRelay: boolean, quality: string): Attempt[] {
   const ordered = preferQuality(streams, quality);
-  // relayOnly streams need a User-Agent/Referer the browser cannot send, so the direct attempt is skipped.
-  const direct: Attempt[] = ordered.filter((s) => s.url && !s.relayOnly).map((s) => ({ kind: "direct" as const, url: s.url }));
+  // relayOnly streams need a User-Agent/Referer the browser cannot send, and plain-http URLs are
+  // blocked as mixed content on an https page, so neither gets a direct attempt.
+  const direct: Attempt[] = ordered
+    .filter((s) => s.url && !s.relayOnly && !isMixedContent(s.url))
+    .map((s) => ({ kind: "direct" as const, url: s.url }));
   const relay: Attempt[] = ordered.filter((s) => s.proxyUrl).map((s) => ({ kind: "relay" as const, url: s.proxyUrl as string }));
-  return preferRelay ? [...relay, ...direct] : [...direct, ...relay];
+  return (preferRelay ? [...relay, ...direct] : [...direct, ...relay]).slice(0, MAX_ATTEMPTS);
 }
 
 export function TvPlayer({
@@ -103,7 +107,7 @@ export function TvPlayer({
       }
     };
 
-    timer = window.setTimeout(() => { if (!parsed) fail(); }, 8000);
+    timer = window.setTimeout(() => { if (!parsed) fail(); }, a.kind === "direct" ? DIRECT_TIMEOUT_MS : RELAY_TIMEOUT_MS);
 
     if (Hls.isSupported()) {
       const hls = new Hls({ enableWorker: false, maxBufferLength: 20, lowLatencyMode: false });
