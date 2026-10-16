@@ -5,6 +5,10 @@
 /* Native controls (select popups, scrollbars, date pickers) follow the app's theme choice, not only the OS setting. */
 html.dark { color-scheme: dark; }
 html:not(.dark) { color-scheme: light; }
+/* Select popups are drawn by the browser. On a transparent select some browsers paint the list with a
+   background that does not match the inherited text color, so set both explicitly per theme. */
+html.dark select option, html.dark select optgroup { background-color: #18181b; color: #f4f4f5; }
+html:not(.dark) select option, html:not(.dark) select optgroup { background-color: #ffffff; color: #18181b; }
 html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
 body { @apply bg-zinc-50 text-zinc-900 antialiased; -webkit-tap-highlight-color: transparent; }
 .dark body { @apply bg-zinc-950 text-zinc-100; }

@@ -593,7 +593,7 @@ export function Player({ streams, autoplay = true, className = "", title, subtit
           <select
             value={manual}
             onChange={(e) => chooseSource(e.target.value)}
-            className="min-h-11 pointer-fine:min-h-0 rounded-md border border-zinc-300 bg-transparent px-2 py-1 dark:border-zinc-700"
+            className="min-h-11 pointer-fine:min-h-0 max-w-full rounded-md border border-zinc-400 bg-white px-2 py-1 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
           >
             <option value="auto">Automatic</option>
             {every.map((a) => (
