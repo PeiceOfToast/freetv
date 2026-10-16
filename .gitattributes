@@ -1,0 +1,8 @@
+# Keep LF everywhere so shell scripts and Dockerfiles work when cloned on Windows.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.mp4 binary
+*.m4s binary
+*.woff2 binary

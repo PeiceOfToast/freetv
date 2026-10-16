@@ -17,7 +17,7 @@ Day-two: [OPERATIONS](docs/OPERATIONS.md) · [TROUBLESHOOTING](docs/TROUBLESHOOT
 ## Quick start
 
 ```sh
-git clone <repo-url> freetv && cd freetv
+git clone https://github.com/PeiceOfToast/freetv.git freetv && cd freetv   # or your fork's URL
 cp .env.example .env && infra/scripts/gen-secret.sh --write   # required: sets PROXY_SECRET
 docker compose up -d --build                                   # then open http://localhost
 ```
@@ -75,11 +75,23 @@ Open `/connect` on your site for the playlist and guide URLs, with per-app steps
 
 ## Development
 
+```sh
+# API (first run downloads the catalog, about 60 MB)
+cd apps/api && npm i
+DATA_DIR=$PWD/.data npm run ingest                         # one-shot catalog build
+DATA_DIR=$PWD/.data PROXY_SECRET=dev-secret npm run dev    # API on :3000
+
+# Web UI (proxies /api to :3000 and /proxy to :3001)
+cd ../web && npm i && npm run dev                          # UI on :5173
+
+# Relay (optional)
+cd ../proxy && npm i && PROXY_SECRET=dev-secret npm run dev   # relay on :3001
 ```
-cd apps/api && npm i && npm run ingest && npm run dev      # API on :3000
-cd apps/web && npm i && npm run dev                        # UI on :5173 (proxies /api)
-cd apps/proxy && npm i && npm run dev                      # relay on :3001
-```
+
+`apps/epg` and `apps/tv` are not run in development: `epg` is a container for the guide grabber and `tv`
+holds packaging templates. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the details, including an
+offline way to generate a guide. Use the same `PROXY_SECRET` for the API and the relay. On Windows
+PowerShell, set variables with `$env:DATA_DIR = "$PWD\.data"` instead of the inline `VAR=value` form.
 
 ## Tests
 

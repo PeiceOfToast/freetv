@@ -3,8 +3,8 @@
 # UNTESTED. Same bootstrap as infra/deploy/oracle/cloud-init.yaml, with the host firewall handled by
 # ufw instead of Oracle's iptables REJECT rule. Hetzner's stock Ubuntu image has no such rule.
 #
-# Before creating the server, replace the two placeholders below. See infra/deploy/hetzner/README.md.
-#   __REPO_URL__  git URL of your FreeTV fork or the upstream repo, e.g. https://github.com/you/freetv.git
+# Before creating the server, replace the placeholder below. See infra/deploy/hetzner/README.md.
+#   REPO_URL (below)  already set to https://github.com/PeiceOfToast/freetv.git (public, no token needed). Change it only for a fork.
 #   __DOMAIN__    public hostname, e.g. tv.example.com. Leave the value empty for plain HTTP on the IP.
 #
 # Runs once on first boot. Progress: /var/log/freetv-bootstrap.log
@@ -19,7 +19,7 @@ write_files:
       set -euo pipefail
       exec >> /var/log/freetv-bootstrap.log 2>&1
 
-      REPO_URL="__REPO_URL__"
+      REPO_URL="https://github.com/PeiceOfToast/freetv.git"  # was __REPO_URL__; change for a fork
       DOMAIN="__DOMAIN__"
       export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a
 

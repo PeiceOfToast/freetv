@@ -18,7 +18,8 @@ because every image is multi-arch. The generic steps (`.env`, updates, backups) 
 
 ## 1. Edit the cloud-init file
 
-Replace `__REPO_URL__` and `__DOMAIN__` in `cloud-init.yaml`, the same as the Oracle guide. An unreplaced
+Set `__DOMAIN__` in `cloud-init.yaml`, the same as the Oracle guide. `REPO_URL` already points at the public
+repo `https://github.com/PeiceOfToast/freetv.git` (no token needed); change it only for a fork. An unreplaced
 `__DOMAIN__` means plain HTTP on the server IP.
 
 ## 2. Create the server

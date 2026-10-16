@@ -21,14 +21,14 @@ host firewall that Oracle's images ship with.
 
 ## 1. Edit the cloud-init file
 
-Open [cloud-init.yaml](cloud-init.yaml) and replace the two placeholders near the top:
+Open [cloud-init.yaml](cloud-init.yaml) and set the values near the top:
 
 | Placeholder | Replace with | Example |
 |-------------|--------------|---------|
-| `__REPO_URL__` | git URL to clone | `https://github.com/you/freetv.git` |
-| `__DOMAIN__` | public hostname, or empty for plain HTTP | `tv.example.com` |
+| `REPO_URL` | git URL to clone. Already `https://github.com/PeiceOfToast/freetv.git`; change only for a fork | `https://github.com/you/freetv.git` |
+| `__DOMAIN__` (placeholder) | public hostname, or empty for plain HTTP | `tv.example.com` |
 
-The bootstrap refuses to run if `__REPO_URL__` is still a placeholder. An unreplaced `__DOMAIN__`
+The repo is public, so the clone needs no token or deploy key. The bootstrap refuses to run if `REPO_URL` starts with `__`. An unreplaced `__DOMAIN__`
 is treated as empty (plain HTTP).
 
 ## 2. Create the instance

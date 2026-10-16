@@ -2,8 +2,8 @@
 # FreeTV on Oracle Cloud Always Free: VM.Standard.A1.Flex, Ubuntu 24.04 (aarch64).
 #
 # Before pasting this into the instance's "Initialization script" (cloud-init) box, replace
-# the two placeholders below. See infra/deploy/oracle/README.md.
-#   __REPO_URL__  git URL of your FreeTV fork or the upstream repo, e.g. https://github.com/you/freetv.git
+# the placeholder below. See infra/deploy/oracle/README.md.
+#   REPO_URL (below)  already set to https://github.com/PeiceOfToast/freetv.git (public, no token needed). Change it only for a fork.
 #   __DOMAIN__    public hostname, e.g. tv.example.com. Leave the value empty for plain HTTP on the IP.
 #
 # Runs once on first boot. Progress: /var/log/freetv-bootstrap.log
@@ -21,7 +21,7 @@ write_files:
       set -euo pipefail
       exec >> /var/log/freetv-bootstrap.log 2>&1
 
-      REPO_URL="__REPO_URL__"
+      REPO_URL="https://github.com/PeiceOfToast/freetv.git"  # was __REPO_URL__; change for a fork
       DOMAIN="__DOMAIN__"
       export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a
 

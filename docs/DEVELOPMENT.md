@@ -33,6 +33,7 @@ That keeps each container's build context tiny and lets the apps be worked on in
 ## Running locally
 
 Prerequisites: Node 22, npm 10, Docker (only for the containers and the epg grabber).
+Get the code with `git clone https://github.com/PeiceOfToast/freetv.git` (or your fork).
 
 ```sh
 # API with the real catalog (first run downloads ~60 MB from iptv-org)
@@ -62,10 +63,14 @@ The whole stack via Docker instead: `cp .env.example .env`, set `PROXY_SECRET`, 
 ## Tests
 
 ```sh
-cd apps/api   && npm run typecheck && npm test     # 104 tests: ingest, routes, epg, exports
-cd apps/proxy && npm run typecheck && npm test     # 40 tests incl. SSRF and playlist rewriting
-cd apps/web   && npm run build                     # strict tsc + vite (no unit tests yet)
+cd apps/api   && npm run typecheck && npm test     # ingest, routes, epg, exports, logo cache, admin
+cd apps/proxy && npm run typecheck && npm test     # incl. SSRF and playlist rewriting
+cd apps/web   && npm run build                     # strict tsc + vite (no unit tests; covered by e2e)
 ```
+
+Test counts are not recorded here because they change with every PR; `npm test` prints the totals.
+On Windows the api suite writes to `C:\data`, and the logo-cache LRU test can fail with `EBUSY` on file
+unlink. That is a Windows file-locking quirk; run the suite in WSL or Docker for a clean result.
 
 API tests build a catalog from `apps/api/test/fixtures/` (slices of real iptv-org data) into a temp
 SQLite file and use Fastify's `inject()`, so they need no network. Routes that depend on "now" take
@@ -117,7 +122,7 @@ Operators then `infra/scripts/update.sh` (or set `FREETV_TAG=v0.2.0` in `.env` t
 
 ```sh
 cd freetv
-git remote add origin git@github.com:<you>/freetv.git     # create the (private) repo on GitHub first, empty, no README
+git remote add origin git@github.com:<you>/freetv.git     # your own fork or copy; upstream is https://github.com/PeiceOfToast/freetv.git
 git push -u origin main
 ```
 

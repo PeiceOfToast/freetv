@@ -23,6 +23,10 @@ Start here. The documents are ordered the way a new operator or contributor shou
 
 ## I want to change it
 
+Note: [REVIEW-2026-10-16.md](REVIEW-2026-10-16.md), [PARALLEL-WORK.md](PARALLEL-WORK.md), [PLAN.md](PLAN.md) and
+everything under [notes/](notes/) are internal development notes: working records of how the project was built
+and reviewed. They are kept for history, may be out of date, and are not user or operator documentation.
+
 | Doc | What it answers |
 |-----|-----------------|
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Repo layout, running each service locally, tests, fixtures, coding conventions, release. |

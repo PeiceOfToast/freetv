@@ -42,8 +42,11 @@ Service names change too. Compose uses `api:3000`. Fly uses `<app>.internal:3000
 
 - **Scaling:** keep the api at one machine. Two machines would be two SQLite writers on two volumes.
 - **Secrets:** `PROXY_SECRET` is required by the api even with the relay off. Set it with `fly secrets`, not in `fly.toml`.
-- **Images:** the `[build] image` lines point at `ghcr.io/freetv/...`. Replace `freetv` with your GHCR owner
-  (the one in `GITHUB_REPOSITORY_OWNER`) and make the packages public, or Fly cannot pull them.
+- **Images:** the `[build] image` lines default to `ghcr.io/peiceoftoast/freetv-<svc>`. Forks: replace `peiceoftoast` with your lowercase GHCR owner
+  (the one in `GITHUB_REPOSITORY_OWNER`) in `api/fly.toml` (e.g. `sed -i 's#ghcr.io/peiceoftoast/#ghcr.io/<owner>/#' infra/deploy/fly/api/fly.toml`),
+  and pass `--build-arg FREETV_OWNER=<owner>` to `fly deploy` in `web/`. The GHCR packages (`freetv-api`, `freetv-web`)
+  must be public, or Fly cannot pull them. GHCR packages are private by default on first publish: on GitHub open
+  Packages > the package > Package settings > Change visibility > Public. Public status was not verified from here.
 - **Cost and sleep:** the web app has `auto_stop_machines = "off"`. Scale-to-zero would drop the first request
   after idle and interrupt the ingest schedule.
 - **Volumes are not backed up.** Use `fly volumes snapshots` or copy `/data` out before risky changes.

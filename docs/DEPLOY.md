@@ -25,7 +25,7 @@ Oracle Cloud Always Free users: see [DEPLOY-ORACLE.md](DEPLOY-ORACLE.md) and `in
 ## Install
 
 ```sh
-git clone <repo-url> freetv && cd freetv
+git clone https://github.com/PeiceOfToast/freetv.git freetv && cd freetv   # or your fork's URL
 cp .env.example .env
 infra/scripts/gen-secret.sh --write      # sets PROXY_SECRET (required)
 # edit .env: set DOMAIN=tv.example.com for automatic HTTPS

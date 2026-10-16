@@ -30,7 +30,7 @@ sudo netfilter-persistent save
 
 ```sh
 sudo mkdir -p /opt/freetv && sudo chown $USER /opt/freetv
-git clone https://github.com/<you>/freetv.git /opt/freetv && cd /opt/freetv
+git clone https://github.com/PeiceOfToast/freetv.git /opt/freetv && cd /opt/freetv   # or your fork's URL
 cp .env.example .env
 infra/scripts/gen-secret.sh --write        # generates PROXY_SECRET (required)
 ```

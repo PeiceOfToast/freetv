@@ -223,7 +223,7 @@ describe("logo cache", () => {
     assert.equal(webp.contentType, "image/webp");
     assert.equal(path.basename(webp.path), `${enc(ids[0])}-256.webp`);
     assert.match(path.basename(path.dirname(webp.path)), /^[0-9a-f]{2}$/);
-    const wm = await sharp(webp.path).metadata();
+    const wm = await sharp(fs.readFileSync(webp.path)).metadata();
     assert.equal(wm.format, "webp");
     assert.equal(wm.width, 256);
     assert.equal(wm.height, 256);
@@ -233,7 +233,7 @@ describe("logo cache", () => {
     assert.ok(png);
     assert.equal(png.contentType, "image/png");
     assert.equal(path.basename(png.path), `${enc(ids[0])}-256.png`);
-    const pm = await sharp(png.path).metadata();
+    const pm = await sharp(fs.readFileSync(png.path)).metadata();
     assert.equal(pm.format, "png");
     assert.equal(pm.hasAlpha, true);
 
@@ -259,13 +259,13 @@ describe("logo cache", () => {
   test("resizes to fit inside the requested edge and never enlarges", async () => {
     const small = await getLogo(ids[0], 64, { webp: true });
     assert.ok(small);
-    const sm = await sharp(small.path).metadata();
+    const sm = await sharp(fs.readFileSync(small.path)).metadata();
     assert.equal(sm.width, 64);
     assert.equal(sm.height, 64);
 
     const big = await getLogo(ids[0], 512, { webp: true });
     assert.ok(big);
-    const bm = await sharp(big.path).metadata();
+    const bm = await sharp(fs.readFileSync(big.path)).metadata();
     assert.equal(bm.width, 400, "400px source is not enlarged to 512");
     assert.equal(bm.height, 400);
   });

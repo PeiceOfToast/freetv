@@ -6,7 +6,8 @@
 
 image:
   # GITHUB_REPOSITORY_OWNER and FREETV_TAG. Images: ghcr.io/<owner>/freetv-<svc>:<tag>.
-  owner: freetv
+  # Lowercase GHCR owner. Forks: --set image.owner=<your-lowercase-owner>. Packages must be public (or add imagePullSecrets).
+  owner: peiceoftoast
   tag: latest
   pullPolicy: IfNotPresent
 

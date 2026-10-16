@@ -1,5 +1,6 @@
 # Fly.io app for the FreeTV api (catalog, EPG import, relay signing). Private only: no public
 # service, reachable from the web app at freetv-api.internal:3000.
+# Forks: replace "peiceoftoast" in the image line with your lowercase GHCR owner.
 # UNTESTED. Replace the app name and the region. The volume must exist before the first deploy.
 #
 #   fly apps create freetv-api
@@ -13,7 +14,7 @@ app = "freetv-api"
 primary_region = "ams"
 
 [build]
-  image = "ghcr.io/freetv/freetv-api:latest"
+  image = "ghcr.io/peiceoftoast/freetv-api:latest"
 
 [env]
   PORT = "3000"
