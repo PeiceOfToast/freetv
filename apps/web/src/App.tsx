@@ -9,6 +9,7 @@ const GuidePage = lazy(() => import("./pages/guide/GuidePage"));
 const AboutPage = lazy(() => import("./pages/about/AboutPage"));
 const TvPage = lazy(() => import("./pages/tv/TvPage"));
 const AdminPage = lazy(() => import("./pages/admin/AdminPage"));
+const ConnectPage = lazy(() => import("./pages/connect/ConnectPage"));
 
 const Fallback = () => (
   <div className="flex items-center justify-center p-16 text-sm opacity-60" role="status">
@@ -28,6 +29,7 @@ export default function App() {
           <Route path="guide" element={<GuidePage />} />
           <Route path="about" element={<AboutPage />} />
           <Route path="admin" element={<AdminPage />} />
+          <Route path="connect" element={<ConnectPage />} />
           <Route path="*" element={<div className="p-8 text-center opacity-70">Not found</div>} />
         </Route>
       </Routes>

@@ -6,7 +6,7 @@ import { config } from "../config.js";
 
 export type Db = Database.Database;
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 let db: Db | null = null;
 
 function schemaPath() {
@@ -35,6 +35,9 @@ export function openDb(dbPath = config.dbPath): Db {
     db.exec("DROP TABLE IF EXISTS channels_fts; DROP TABLE IF EXISTS channels; DROP TABLE IF EXISTS streams; DROP TABLE IF EXISTS feeds; DROP TABLE IF EXISTS guides; DROP TABLE IF EXISTS channel_categories; DROP TABLE IF EXISTS channel_languages; DROP TABLE IF EXISTS categories; DROP TABLE IF EXISTS countries; DROP TABLE IF EXISTS languages;");
   }
   db.exec(schema);
+  // Additive migrations for the tables that survive version bumps (CREATE TABLE IF NOT EXISTS does
+  // not add columns to an existing table).
+  ensureColumn(db, "stream_health", "browser_ok", "INTEGER");
   if (have !== String(SCHEMA_VERSION)) {
     db.prepare("INSERT INTO meta(key,value) VALUES('schema_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(String(SCHEMA_VERSION));
   }
@@ -52,6 +55,11 @@ export function openWorkerConnection(dbPath: string): Db {
   conn.pragma("synchronous = NORMAL");
   conn.pragma("foreign_keys = OFF");
   return conn;
+}
+
+function ensureColumn(d: Db, table: string, column: string, type: string) {
+  const cols = d.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!cols.some((c) => c.name === column)) d.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
 }
 
 export function getDb(): Db {

@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS channels (
   guide_count    INTEGER NOT NULL DEFAULT 0,
   number         INTEGER,                    -- stable per-instance channel number (from channel_numbers)
   last_checked   INTEGER,                    -- most recent probe of any of its streams (denormalised for sort=updated)
+  browser_count  INTEGER NOT NULL DEFAULT 0,  -- streams known to play in a browser (https + CORS); 0 = none or unknown
   name_sort      TEXT NOT NULL               -- lowercase, diacritics stripped
 );
 CREATE INDEX IF NOT EXISTS idx_channels_number ON channels(number);
@@ -94,7 +95,8 @@ CREATE TABLE IF NOT EXISTS streams (
   user_agent   TEXT,
   referrer     TEXT,
   status       TEXT,                          -- NULL | 'online' | 'offline' (from optional health probe)
-  last_checked INTEGER                        -- unix seconds
+  last_checked INTEGER,                       -- unix seconds
+  browser_ok   INTEGER                        -- NULL unknown | 1 plays in a browser (https + permissive CORS) | 0 needs an app/relay
 );
 CREATE INDEX IF NOT EXISTS idx_streams_channel ON streams(channel, idx);
 
@@ -131,7 +133,15 @@ CREATE TABLE IF NOT EXISTS stream_health (
   ok_count     INTEGER NOT NULL DEFAULT 0,  -- consecutive successes
   last_checked INTEGER NOT NULL,
   last_online  INTEGER,
-  error        TEXT
+  error        TEXT,
+  browser_ok   INTEGER                        -- see streams.browser_ok; recorded by the prober from the playlist response
+);
+
+-- Operator settings editable from /admin (never touched by ingest). Values are JSON-encoded.
+CREATE TABLE IF NOT EXISTS settings (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
 );
 
 -- EPG (owned by the XMLTV importer; ingest never touches this table)

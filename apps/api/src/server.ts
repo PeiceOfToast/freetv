@@ -10,6 +10,7 @@ import { epgRoutes } from "./routes/epg.js";
 import { exportRoutes } from "./routes/export.js";
 import { logoRoutes } from "./routes/logo.js";
 import { adminRoutes, bearerTokenOk } from "./routes/admin.js";
+import { settingsRoutes } from "./routes/settings.js";
 import { startProber, runProbe } from "./prober/index.js";
 import { scheduleIngest, runIngest } from "./ingest/index.js";
 import { startEpgWatcher, importEpg } from "./epg/importer.js";
@@ -47,6 +48,7 @@ export async function buildServer() {
   await app.register(exportRoutes);
   await app.register(logoRoutes);
   await app.register(adminRoutes);
+  await app.register(settingsRoutes);
   return app;
 }
 

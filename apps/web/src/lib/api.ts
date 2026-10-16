@@ -6,13 +6,13 @@ export interface Programme extends ProgrammeBrief { description: string | null; 
 export interface ChannelSummary {
   id: string; number: number | null; name: string; country: string | null; countryName: string | null; flag: string | null;
   categories: string[]; languages: string[]; network: string | null; isNsfw: boolean;
-  logo: string | null; streamCount: number; bestQuality: string | null; online: boolean | null; hasGuide: boolean;
+  logo: string | null; streamCount: number; bestQuality: string | null; online: boolean | null; browserPlayable: boolean | null; hasGuide: boolean;
   now?: ProgrammeBrief | null;
 }
 
 export interface StreamInfo {
   index: number; url: string; title: string | null; quality: string | null; labels: string[]; feed: string | null;
-  userAgent: string | null; referrer: string | null; online: boolean | null; lastChecked: number | null; relayOnly: boolean; proxyUrl?: string;
+  userAgent: string | null; referrer: string | null; online: boolean | null; lastChecked: number | null; relayOnly: boolean; browserPlayable: boolean | null; proxyUrl?: string;
 }
 
 export interface ChannelDetail {
@@ -33,12 +33,16 @@ export interface Meta {
   programmes: number; proxyEnabled: boolean; hideNsfwDefault: boolean; version: string;
   health?: { probed: number; online: number; lastProbe: number | null };
 }
+export type FeaturedApp = "tivimate" | "vlc" | "kodi" | "plex" | "jellyfin" | "smarters" | "generic";
+export interface Settings {
+  siteName: string; publicUrl: string; contact: string; notes: string; featuredApps: FeaturedApp[]; relayEnabled: boolean;
+}
 export interface Paged<T> { total: number; page: number; limit: number; items: T[] }
 
 export type SortKey = "relevance" | "name" | "country" | "streams" | "quality" | "updated";
 export interface ChannelQuery {
   q?: string; category?: string[]; country?: string[]; language?: string[];
-  hasStream?: boolean; online?: boolean; nsfw?: boolean; quality?: "sd" | "720p" | "1080p" | "2160p";
+  hasStream?: boolean; online?: boolean; playable?: "browser" | "app" | "any"; nsfw?: boolean; quality?: "sd" | "720p" | "1080p" | "2160p";
   favorites?: string[]; sort?: SortKey; order?: "asc" | "desc"; page?: number; limit?: number; withNow?: boolean;
 }
 
@@ -79,6 +83,8 @@ export const api = {
     get<Record<string, { now: Programme | null; next: Programme | null }>>("/api/epg/now", { ids }, signal),
   epgGrid: (ids: string[], from: number, to: number, signal?: AbortSignal) =>
     get<{ from: number; to: number; channels: Record<string, Programme[]> }>("/api/epg/grid", { ids, from, to }, signal),
+  settings: (signal?: AbortSignal) => get<Settings>("/api/settings", undefined, signal),
+  channelPlaylistUrl: (id: string) => `${BASE}/api/channels/${encodeURIComponent(id)}/playlist.m3u`,
   play: (id: string, index: number) =>
     get<{ url: string; proxyUrl?: string; userAgent: string | null; referrer: string | null }>(`/api/stream/${encodeURIComponent(id)}/${index}/play`),
 };

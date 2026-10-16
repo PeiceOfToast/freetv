@@ -77,6 +77,7 @@ export function Layout() {
           <nav className="flex shrink-0 items-center gap-0.5 sm:gap-1">
             <NavLink to="/" end className={link}>Channels</NavLink>
             <NavLink to="/guide" className={link}>Guide</NavLink>
+            <NavLink to="/connect" className={link}>Use in your app</NavLink>
             <NavLink to="/about" className={link}>About</NavLink>
             <NavLink to="/tv" className={link + " hidden sm:inline-flex"} title="10-foot mode for TVs">TV mode</NavLink>
           </nav>

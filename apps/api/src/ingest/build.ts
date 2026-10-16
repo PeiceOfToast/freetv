@@ -498,9 +498,9 @@ export function buildCatalog(db: Db, rawDir: string, now = Math.floor(Date.now()
     // Re-apply stream health from the prober's URL-keyed history onto the rebuilt streams rows.
     db.prepare(
       // Hysteresis: a single failure on a never-online stream is "pending", published as NULL (unknown).
-      "UPDATE streams SET status = (SELECT CASE WHEN h.status = 'offline' AND h.fail_count < 2 AND h.last_online IS NULL THEN NULL ELSE h.status END FROM stream_health h WHERE h.url = streams.url), last_checked = (SELECT h.last_checked FROM stream_health h WHERE h.url = streams.url) WHERE url IN (SELECT url FROM stream_health)",
+      "UPDATE streams SET status = (SELECT CASE WHEN h.status = 'offline' AND h.fail_count < 2 AND h.last_online IS NULL THEN NULL ELSE h.status END FROM stream_health h WHERE h.url = streams.url), last_checked = (SELECT h.last_checked FROM stream_health h WHERE h.url = streams.url), browser_ok = (SELECT h.browser_ok FROM stream_health h WHERE h.url = streams.url) WHERE url IN (SELECT url FROM stream_health)",
     ).run();
-    db.prepare("UPDATE channels SET online_count = (SELECT COUNT(*) FROM streams s WHERE s.channel = channels.id AND s.status = 'online'), last_checked = (SELECT MAX(s.last_checked) FROM streams s WHERE s.channel = channels.id)").run();
+    db.prepare("UPDATE channels SET online_count = (SELECT COUNT(*) FROM streams s WHERE s.channel = channels.id AND s.status = 'online'), last_checked = (SELECT MAX(s.last_checked) FROM streams s WHERE s.channel = channels.id), browser_count = (SELECT COUNT(*) FROM streams s WHERE s.channel = channels.id AND s.browser_ok = 1)").run();
 
     insMeta.run("last_ingest", String(now));
     insMeta.run("last_ingest_ms", String(Date.now() - t0));

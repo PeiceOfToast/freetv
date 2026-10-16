@@ -40,6 +40,7 @@ Query params (all optional):
 | `online` | bool (default `false`) | only channels with ≥1 stream whose last health check was `online` (if health data exists; otherwise ignored) |
 | `nsfw` | bool (default = `!HIDE_NSFW_DEFAULT`) | include NSFW/blocklisted channels |
 | `quality` | string | minimum quality: `sd`, `720p`, `1080p`, `2160p` (compares `best_quality`) |
+| `playable` | `browser` / `app` / `any` (default `any`) | `browser` = only channels with `browserPlayable=true`; `app` = channels with streams but none browser-playable (incl. unknown) |
 | `favorites` | comma list of ids | restrict to these ids (UI passes localStorage favorites) |
 | `sort` | `relevance` (default when `q`), `name` (default otherwise), `country`, `streams`, `quality`, `updated` | |
 | `order` | `asc` / `desc` | default `asc`, except `streams`/`quality`/`updated` default `desc` |
@@ -59,11 +60,16 @@ Response:
   "categories": ["news"], "languages": ["eng"], "network": "BBC", "isNsfw": false,
   "logo": "https://.../logo.png", "streamCount": 3, "bestQuality": "1080p",
   "online": null,
+  "browserPlayable": null,
   "hasGuide": true,
   "now": { "title": "Newsday", "start": 1760500000, "stop": 1760503600 }
 }
 ```
-`number` is this instance's stable channel number (null for channels without streams). `now` is included only when `withNow=true` (costs one extra query per page) — the browse grid requests it; `online` is `true|false|null` (null = never probed).
+`browserPlayable` is `true` when at least one stream is known to play in a browser without a relay (https + permissive CORS, recorded by the prober), `false` when all probed streams need an app, `null` when nothing has been probed yet. `number` is this instance's stable channel number (null for channels without streams). `now` is included only when `withNow=true` (costs one extra query per page) — the browse grid requests it; `online` is `true|false|null` (null = never probed).
+
+## `GET /api/channels/:id/playlist.m3u`
+A one-channel M3U (same line format as the full export, `streams=all`, origin URLs, no relay) with
+`Content-Disposition: attachment; filename="<channel>.m3u"` — what "Open in app" hands to VLC/IINA/etc. 404 for unknown/blocked.
 
 ## `GET /api/channels/number/:n`
 Looks up a channel by this instance's channel number; returns the same `ChannelDetail` as below, 404 if unassigned.
@@ -81,7 +87,7 @@ Looks up a channel by this instance's channel number; returns the same `ChannelD
   "streams": [
     { "index": 0, "url": "https://.../master.m3u8", "title": "BBC News", "quality": "1080p", "labels": [],
       "feed": "HD", "userAgent": null, "referrer": null, "online": null, "lastChecked": null,
-      "relayOnly": false, "proxyUrl": "/proxy/<sig>/<payload>" }
+      "relayOnly": false, "browserPlayable": null, "proxyUrl": "/proxy/<sig>/<payload>" }
   ],
   "guides": [{ "site": "bbc.co.uk", "siteId": "bbc_news24", "lang": "en" }],
   "now":  { "title": "...", "start": 0, "stop": 0, "description": "...", "category": null, "icon": null },
@@ -131,6 +137,24 @@ Absolute URLs use `PUBLIC_URL` when set, else the request's `X-Forwarded-Proto`/
 
 ### `GET /api/guide.xml`
 Streams the current XMLTV file (`EPG_FILE`) as `application/xml`; supports `If-Modified-Since`/`Last-Modified` and gzip when the client accepts it. 404 if no guide exists yet.
+
+## Settings
+
+### `GET /api/settings` (public)
+Operator-configurable presentation settings, with defaults from env when unset:
+```json
+{
+  "siteName": "FreeTV", "publicUrl": "https://tv.example.com", "contact": "", "notes": "",
+  "featuredApps": ["tivimate", "vlc", "kodi", "plex", "jellyfin"],
+  "relayEnabled": false
+}
+```
+`publicUrl` falls back to `PUBLIC_URL`, then to the request origin. `relayEnabled` mirrors `/api/meta.proxyEnabled`.
+
+### `GET /api/admin/settings` · `PUT /api/admin/settings` (Bearer `ADMIN_TOKEN`)
+GET returns the stored values plus `defaults` (what env provides). PUT takes a partial object of
+`siteName` (≤ 60 chars), `publicUrl` (http(s) URL or empty = use env), `contact` (≤ 200), `notes` (≤ 2000, plain text),
+`featuredApps` (subset of `tivimate|vlc|kodi|plex|jellyfin|smarters|generic`); unknown keys → 400. Stored in the `settings` table; takes effect immediately (no restart).
 
 ## Admin
 
