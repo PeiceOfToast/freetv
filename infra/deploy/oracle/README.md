@@ -1,6 +1,9 @@
 # Deploy FreeTV on Oracle Cloud Always Free
 
-Target: one `VM.Standard.A1.Flex` instance (4 OCPU, 24 GB, Arm) running Ubuntu 24.04. This is
+Target: one `VM.Standard.A1.Flex` instance (4 OCPU, 12 GB, Arm) running Ubuntu 24.04. This is
+the whole Always-Free Arm allowance used as a single VM (Oracle also offers two tiny AMD VMs with
+1/8 OCPU and 1 GB each; they can run the site with the guide and relay switched off, but not the full
+stack). This is
 enough for the full stack (web, api, proxy, epg). Everything runs on the box; no managed services.
 
 The generic steps (Docker, `.env`, updates, backups) are in [docs/DEPLOY.md](../../../docs/DEPLOY.md).
@@ -33,11 +36,20 @@ In the OCI console: **Compute → Instances → Create instance**.
 1. **Name:** `freetv`.
 2. **Image:** click *Change image* → *Canonical Ubuntu* → **24.04** → make sure the architecture is
    **aarch64** (Arm). Images for the x86 shape will not work with the A1 shape.
-3. **Shape:** *Change shape* → **Ampere** → **VM.Standard.A1.Flex** → **4 OCPU, 24 GB memory**
+3. **Shape:** *Change shape* → **Ampere** → **VM.Standard.A1.Flex** → **4 OCPU, 12 GB memory (the whole Always-Free Arm allowance in one VM)**
    (the Always Free maximum; you can use less).
 4. **Networking:** use an existing VCN, or let the wizard create one. Make sure the subnet is
    **public** and **Assign a public IPv4 address** is on.
 5. **SSH keys:** upload or paste your public key (needed to log in and debug).
+6. **Boot volume:** expand *Boot volume* and set **100 GB** (Always Free includes 200 GB of block storage;
+   the default 47 GB works but Docker images, the logo cache and a large guide add up).
+
+> **"Out of host capacity"** is the usual error when creating a free A1 instance — the Arm pool in your home
+> region is often full. It is not a quota problem. Try another *availability domain* in the shape dialog,
+> retry at a different time of day (early morning in the region's time zone tends to work), or temporarily
+> try 2 OCPU / 6 GB and resize later. Upgrading the account to Pay-As-You-Go (no charge while you stay within
+> Always Free limits) also lifts you out of the most contended pool. Do not pick the AMD micro shape as a
+> workaround: 1 GB of RAM is not enough for the guide grabber (see below).
 6. Expand **Show advanced options → Initialization script**, choose **Paste cloud-init script**
    (or *Cloud-init script*), and paste the full edited contents of `cloud-init.yaml`.
 7. Click **Create**. Wait for the state to show *Running*, then note the **Public IP address**.

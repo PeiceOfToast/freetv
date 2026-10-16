@@ -75,12 +75,12 @@ Each track owns a directory and must not edit files outside it (see `docs/PARALL
 - **Stream rot.** iptv-org streams go dead constantly. → Re-ingest every few hours; UI falls through all streams for a channel; optional health-probe job marks `status` so "only online" filtering works.
 - **CORS / mixed content.** → Proxy profile; UI tries direct first, then proxied.
 - **EPG cost.** Grabbing every site takes hours and real CPU. → Defaults: `EPG_DAYS=2`, bounded concurrency, runs on a cron, importer streams the XML so RAM stays flat. Operators can set `EPG_SITES` to a short list.
-- **Free-tier VM limits.** 4 OCPU / 24 GB ARM is generous; the relay is the only bandwidth hog. → Proxy is a compose profile and has a per-request byte budget / concurrency cap.
+- **Free-tier VM limits.** 4 OCPU / 12 GB ARM is generous; the relay is the only bandwidth hog. → Proxy is a compose profile and has a per-request byte budget / concurrency cap.
 - **Legal.** We list and relay what iptv-org lists; blocklisted channels are excluded; NSFW hidden by default. README carries a clear takedown/contact note. Operators are responsible for their own jurisdiction.
 
 ## Hosting reference: Oracle Cloud Always Free
 
-- VM.Standard.A1.Flex, 4 OCPU / 24 GB, Ubuntu 22.04/24.04 (ARM — all images are multi-arch).
+- VM.Standard.A1.Flex, 4 OCPU / 12 GB (all of the Always-Free Arm allowance in one VM), Ubuntu 22.04/24.04 (ARM — all images are multi-arch).
 - Open 80/443 in the VCN security list **and** in the instance's iptables (Oracle images ship a restrictive ruleset).
 - `infra/deploy/oracle/cloud-init.yaml` installs Docker, clones the repo, writes `.env`, starts compose.
 - Point an A record at the public IP; set `DOMAIN=tv.example.com`; Caddy gets a Let's Encrypt cert.

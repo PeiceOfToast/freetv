@@ -169,7 +169,7 @@ Measured on the catalog as of October 2026 (31.5k channels, 16k streams):
 | Relay | roughly 2–8 Mbit/s per concurrent viewer who needed the relay; bounded by `PROXY_MAX_CONCURRENT` (200) and `PROXY_MAX_BYTES` per response |
 | Idle footprint | api ~120 MB RAM, proxy ~40 MB, web ~20 MB, epg ~150 MB between runs |
 
-An Oracle A1.Flex (4 OCPU / 24 GB) is comfortable. A 1 vCPU / 1 GB VPS runs the site fine with
+An Oracle Always-Free A1.Flex (4 OCPU / 12 GB) is comfortable: api ~150 MB, proxy ~40 MB, web ~20 MB, epg up to its 4 GB limit during a grab. A 1 vCPU / 1 GB VPS runs the site fine with
 `epg` disabled or narrowed to a handful of sites. Bandwidth is the real cost: the relay re-serves
 video, so watch your provider's egress allowance if the site gets popular (Oracle's free tier includes
 10 TB/month).

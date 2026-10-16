@@ -1,6 +1,6 @@
 # Deploying FreeTV on Oracle Cloud (Always Free)
 
-The reference deployment is one `VM.Standard.A1.Flex` instance (4 OCPU, 24 GB, Ubuntu 24.04 Arm).
+The reference deployment is one `VM.Standard.A1.Flex` instance (4 OCPU, 12 GB, Ubuntu 24.04 Arm — the entire Always-Free Arm allowance as one VM).
 It fits the whole stack with headroom, at no cost on the Always Free tier.
 
 Everything is in [`infra/deploy/oracle/`](../infra/deploy/oracle/):
