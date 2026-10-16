@@ -128,11 +128,14 @@ services:
     # The grabber holds several hundred thousand programmes in memory before its XML write, so
     # EPG_SITES=all may need more than 2 GB (unverified). 4 GB is the limit here. On a smaller host,
     # narrow EPG_SITES or set EPG_SPLIT_BY_SITE=true.
-    mem_limit: 4g
+    mem_limit: ${EPG_MEM_LIMIT:-4g}
     cpus: 2
     labels: *watchtower-labels
     logging: *logging
     environment:
+      # V8 sizes its heap from the host's RAM, not the cgroup limit, so cap it below mem_limit or the
+      # kernel OOM-kills the grabber mid-run instead of Node failing cleanly. Keep ~25% headroom.
+      NODE_OPTIONS: ${EPG_NODE_OPTIONS:---max-old-space-size=3072}
       IPTV_API_BASE: ${IPTV_API_BASE:-https://iptv-org.github.io/api}
       EPG_SITES: ${EPG_SITES:-all}
       EPG_EXCLUDE_SITES: ${EPG_EXCLUDE_SITES:-}
