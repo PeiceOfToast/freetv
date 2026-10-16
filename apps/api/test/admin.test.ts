@@ -16,6 +16,7 @@ const fixtures = path.join(here, "fixtures");
 const TOKEN = "test-admin-token";
 
 config.logLevel = "silent";
+config.logoCacheEnabled = false; // the status endpoint would otherwise create the logo cache under /data, which CI cannot write
 config.adminToken = TOKEN;
 config.proxyEnabled = true;
 config.proxySecret = "test-secret";
