@@ -288,7 +288,9 @@ describe("GET /api/playlist.m3u", () => {
     const res = await get("/api/playlist.m3u?q=zzzqqqnomatch");
     assert.equal(res.statusCode, 200);
     assert.equal(parseM3u(res.body).length, 0);
-    assert.equal(res.body.split("\n").length, 2, "header line and trailing newline only");
+    // Header, #PLAYLIST line and the trailing newline's empty last element.
+    assert.equal(res.body.split("\n").length, 3, "header and #PLAYLIST lines, then the trailing newline");
+    assert.match(res.body.split("\n")[1], /^#PLAYLIST:/);
   });
 });
 

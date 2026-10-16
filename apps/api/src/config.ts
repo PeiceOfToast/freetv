@@ -18,7 +18,7 @@ export const config = {
   iptvApiMirror: "https://raw.githubusercontent.com/iptv-org/api/gh-pages",
   ingestIntervalHours: num(process.env.INGEST_INTERVAL_HOURS, 6),
   hideNsfwDefault: bool(process.env.HIDE_NSFW_DEFAULT, true),
-  proxyEnabled: bool(process.env.PROXY_ENABLED, true),
+  proxyEnabled: bool(process.env.PROXY_ENABLED, false), // hub mode by default
   proxySecret: /^change-me/i.test(process.env.PROXY_SECRET ?? "") ? "" : (process.env.PROXY_SECRET ?? ""),
   proxyPublicPath: (process.env.PROXY_PUBLIC_PATH ?? "/proxy").replace(/\/$/, ""),
   /** Lifetime of relay URLs in channel responses (seconds from issue). The proxy rejects them after exp. */

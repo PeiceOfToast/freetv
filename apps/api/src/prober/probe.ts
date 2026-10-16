@@ -24,6 +24,33 @@ export interface ProbeResult {
   latencyMs: number;
   /** Why it is offline; null when online. */
   error: string | null;
+  /**
+   * Plays in a browser without the relay: the final URL is https and the response carries
+   * `Access-Control-Allow-Origin: *` (see browserPlayableOf). Null when the probe failed (offline), so
+   * a stored value is kept rather than overwritten by a failed check.
+   */
+  browserOk: boolean | null;
+}
+
+/**
+ * Browser playability from the final URL and the CORS header. Requires https and exactly "*": an
+ * anonymous fetch from any player origin passes "*", but a specific origin only matches one site, and
+ * the prober cannot know which origin a player will be served from. Other values count as not playable.
+ */
+export function browserPlayableOf(finalUrl: string, allowOrigin: string | null | undefined): boolean {
+  let protocol: string;
+  try {
+    protocol = new URL(finalUrl).protocol;
+  } catch {
+    return false;
+  }
+  return protocol === "https:" && (allowOrigin ?? "").trim() === "*";
+}
+
+/** Filled in by verdictFor while a probe runs. */
+interface Report {
+  httpStatus: number | null;
+  browserOk: boolean;
 }
 
 const M3U8_PATH = /\.m3u8?$/i;
@@ -39,16 +66,24 @@ export async function probeStream(url: string, opts: ProbeOptions = {}): Promise
     timedOut = true;
     controller.abort();
   }, timeoutMs);
-  let httpStatus: number | null = null;
+  const report: Report = { httpStatus: null, browserOk: false };
   try {
-    const problem = await verdictFor(url, opts, controller.signal, (s) => (httpStatus = s));
-    return { status: problem === null ? "online" : "offline", httpStatus, latencyMs: Date.now() - started, error: problem };
+    const problem = await verdictFor(url, opts, controller.signal, report);
+    const online = problem === null;
+    return {
+      status: online ? "online" : "offline",
+      httpStatus: report.httpStatus,
+      latencyMs: Date.now() - started,
+      error: problem,
+      browserOk: online ? report.browserOk : null,
+    };
   } catch (err) {
     return {
       status: "offline",
-      httpStatus,
+      httpStatus: report.httpStatus,
       latencyMs: Date.now() - started,
       error: timedOut ? `timeout after ${timeoutMs} ms` : describeError(err),
+      browserOk: null,
     };
   } finally {
     clearTimeout(timer);
@@ -60,7 +95,7 @@ async function verdictFor(
   url: string,
   opts: ProbeOptions,
   signal: AbortSignal,
-  setStatus: (s: number) => void,
+  report: Report,
 ): Promise<string | null> {
   let target = parseHttpUrl(url);
   if (!target) return "unsupported URL (only http and https are probed)";
@@ -78,7 +113,7 @@ async function verdictFor(
       }
       throw err;
     }
-    setStatus(res.status);
+    report.httpStatus = res.status;
     const location = res.headers.get("location");
     if (res.status >= 300 && res.status < 400 && location) {
       await discard(res);
@@ -90,6 +125,8 @@ async function verdictFor(
     }
     break;
   }
+  // The final hop decides browser playability: a redirect from https to http loses it.
+  report.browserOk = browserPlayableOf(target.toString(), res.headers.get("access-control-allow-origin"));
 
   if (!res.ok) {
     await discard(res);

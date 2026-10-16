@@ -77,8 +77,26 @@ force an ingest.
 
 **"Couldn't play this channel" for everything.** Check one stream manually from the VM:
 `curl -sI <stream url from /api/channels/ID>`. If it works from the VM but not the browser, it is
-CORS/mixed content and the relay should have caught it — see the next item. If it fails from the VM
+CORS/mixed content, and the relay should have caught it when it is on. With the default (relay off), use **Open in app** or turn the relay on: see the next items. If it fails from the VM
 too, the stream is dead or geo-blocked; nothing to fix.
+
+**A channel shows "Open in app" and nothing opens on iPhone (Safari).** Cause: iOS passes the link only to a player app that is
+installed and registers its own link scheme. If none is installed, nothing happens and no error appears. Fix: install a player
+such as VLC, then tap the button again. If a player is installed and still nothing opens, copy the playlist address from
+`/connect` and add it to the player by hand. Which scheme a player uses is up to that player, so verify on your device.
+
+**"Open in app" does nothing on Android.** The button uses an Android intent link, which Chrome handles reliably. Firefox,
+Samsung Internet and the browsers inside social-media apps may ignore it. Open the site in Chrome and try again. If no player
+app is installed, install one, such as VLC, or add the playlist from `/connect` by hand.
+
+**The channel says "Browser" but will not play.** The browser flag comes from the stream prober's last check, not from a live
+test. The stream may have gone offline, moved, or started needing headers since then. Check `lastChecked` on the channel's
+streams (`GET /api/channels/ID`) and `health.lastProbe` in `GET /api/meta`. The next pass runs every `PROBE_INTERVAL_HOURS`.
+To run one now, `POST /api/admin/probe` with your admin token. With `PROBE_ENABLED=false` the flags never update.
+
+**A channel will not play in the browser, and there is no relay.** That is hub mode working as designed: the relay is off by
+default. Use **Open in app** on the watch page, or the playlist from `/connect` in your app. To carry these streams through
+your server instead, turn the relay on, after reading [OPERATIONS: Relay](OPERATIONS.md#relay-off-by-default).
 
 **Relay URLs return 502.** The `proxy` container is not running (profile disabled) while
 `PROXY_ENABLED=true` makes the api hand out relay URLs anyway. Either enable the profile or set
@@ -96,8 +114,8 @@ loopback and link-local ranges. Streams on public IPs are fine. For a LAN-only t
 `PROXY_ALLOW_PRIVATE=true` (never on the internet).
 
 **Channel plays on desktop but not on iPhone.** iOS Safari uses native HLS, which is stricter about
-playlists (e.g. missing `#EXT-X-VERSION`, mixed codecs). Try "Prefer relay" or another source in the
-source picker; otherwise it is the stream.
+playlists (e.g. missing `#EXT-X-VERSION`, mixed codecs). Try **Open in app** (the stream then plays in a player app),
+or another source in the source picker; otherwise it is the stream. "Prefer relay" only does anything with the relay on.
 
 **Playback stalls every few seconds through the relay.** The VM's upload bandwidth or
 `PROXY_MAX_CONCURRENT` is saturated. `docker compose logs proxy` shows request timings. Consider

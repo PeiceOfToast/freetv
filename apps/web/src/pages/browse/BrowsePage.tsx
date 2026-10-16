@@ -71,10 +71,10 @@ export default function BrowsePage() {
   const change = useCallback((patch: Partial<BrowseState>) => update({ ...patch, page: 1 }), [update]);
   const onSearch = useCallback((q: string) => update({ q, page: 1 }, { replace: true }), [update]);
   const clearFilters = useCallback(
-    () => change({ category: [], country: [], language: [], quality: "", hasStream: true, online: false, nsfw: false, favorites: false }),
+    () => change({ category: [], country: [], language: [], quality: "", playable: "any", hasStream: true, online: false, nsfw: false, favorites: false }),
     [change],
   );
-  const clearAll = useCallback(() => change({ q: "", category: [], country: [], language: [], quality: "", hasStream: true, online: false, nsfw: false, favorites: false }), [change]);
+  const clearAll = useCallback(() => change({ q: "", category: [], country: [], language: [], quality: "", playable: "any", hasStream: true, online: false, nsfw: false, favorites: false }), [change]);
   const goPage = useCallback((p: number) => {
     update({ page: p });
     window.scrollTo({ top: 0 });

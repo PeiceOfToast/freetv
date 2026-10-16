@@ -63,7 +63,7 @@ services:
       IPTV_API_BASE: ${IPTV_API_BASE:-https://iptv-org.github.io/api}
       INGEST_INTERVAL_HOURS: ${INGEST_INTERVAL_HOURS:-6}
       HIDE_NSFW_DEFAULT: ${HIDE_NSFW_DEFAULT:-true}
-      PROXY_ENABLED: ${PROXY_ENABLED:-true}
+      PROXY_ENABLED: ${PROXY_ENABLED:-false}
       PROXY_SECRET: ${PROXY_SECRET:?Set PROXY_SECRET in .env (run infra/scripts/gen-secret.sh)}
       PROXY_PUBLIC_PATH: ${PROXY_PUBLIC_PATH:-/proxy}
       # Signed relay URLs expire after these many seconds (channel pages / M3U exports).

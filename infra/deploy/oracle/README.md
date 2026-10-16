@@ -2,9 +2,9 @@
 
 Target: one `VM.Standard.A1.Flex` instance (4 OCPU, 12 GB, Arm) running Ubuntu 24.04. This is
 the whole Always-Free Arm allowance used as a single VM (Oracle also offers two tiny AMD VMs with
-1/8 OCPU and 1 GB each; they can run the site with the guide and relay switched off, but not the full
-stack). This is
-enough for the full stack (web, api, proxy, epg). Everything runs on the box; no managed services.
+1/8 OCPU and 1 GB each; they can run the site with the guide switched off, but not the full stack). This is
+enough for the default stack (web, api and epg in hub mode; add proxy only if you turn the relay on). Everything runs on
+the box; no managed services.
 
 The generic steps (Docker, `.env`, updates, backups) are in [docs/DEPLOY.md](../../../docs/DEPLOY.md).
 This folder covers the parts specific to Oracle: console clicks, the security list, and the
@@ -15,7 +15,9 @@ host firewall that Oracle's images ship with.
 - A domain you control, for example `tv.example.com`. You will add one DNS record. Without a domain
   the site runs on plain HTTP at the instance IP (fine for testing, not for real use).
 - A git URL for the repo the instance should clone (your fork, or the upstream repo).
-- Decide whether to keep the default profiles (`proxy` and `epg`) or drop one. See the `.env` notes in docs/DEPLOY.md.
+- The default profile is `epg` only: hub mode, with no relay. Keep it that way unless you accept the bandwidth cost in
+  [OPERATIONS: Relay](../../../docs/OPERATIONS.md#relay-off-by-default). Drop `epg` if you do not want a TV guide.
+  See the `.env` notes in docs/DEPLOY.md.
 
 ## 1. Edit the cloud-init file
 

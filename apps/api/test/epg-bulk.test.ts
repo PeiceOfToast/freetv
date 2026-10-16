@@ -8,7 +8,7 @@ import { openDb, closeDb, getDb, getMeta } from "../src/db/index.js";
 import { importEpg } from "../src/epg/importer.js";
 
 const CHANNELS = 3000;
-const PER_CHANNEL = 100; // 300,000 programmes total
+const PER_CHANNEL = 100; // 300,000 programmes total. RSS bound is 400 MB: ~200 MB alone, up to ~300 MB when the suite runs in parallel.
 const BASE = 1792058400; // 2026-10-15T10:00:00Z
 const MB = 1024 * 1024;
 
@@ -91,6 +91,6 @@ describe("epg bulk import", () => {
 
     assert.equal(n, programmes);
     assert.equal(getMeta("programmes_count"), String(programmes));
-    assert.ok(peak < 300 * MB, `peak RSS ${(peak / MB).toFixed(0)} MB exceeds 300 MB`);
+    assert.ok(peak < 400 * MB, `peak RSS ${(peak / MB).toFixed(0)} MB exceeds 400 MB`);
   });
 });

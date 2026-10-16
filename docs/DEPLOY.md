@@ -6,7 +6,7 @@ FreeTV runs as a Docker Compose stack on any Linux host with Docker. Four contai
 |---------|-----------|------|
 | `web` | yes | Caddy: serves the SPA, reverse-proxies `/api` and `/proxy`, HTTPS when `DOMAIN` is set |
 | `api` | yes | Catalog (SQLite), JSON API, EPG importer, proxy URL signing |
-| `proxy` | profile `proxy` | HLS relay for streams that fail in the browser directly |
+| `proxy` | profile `proxy` (off by default) | Optional HLS relay for streams that fail in the browser. Off in hub mode; see [OPERATIONS: Relay](OPERATIONS.md#relay-off-by-default) |
 | `epg` | profile `epg` | TV guide grabber (iptv-org/epg), writes XMLTV into the shared `data` volume |
 
 Only ports 80 and 443 are published. The api and proxy are reachable only through Caddy.
@@ -36,8 +36,8 @@ docker compose ps
 Open `https://<DOMAIN>` (or `http://<host>` when `DOMAIN` is empty). The catalog is downloaded on
 first start; channels appear within a few minutes.
 
-`--build` builds the four images from this checkout. The core services (`web`, `api`, `proxy`) build and
-start first. `epg` builds last, on its own, because it downloads the grabber from the network. If that build
+`--build` builds the images from this checkout. The core services (`web` and `api`, plus `proxy` when its profile is on)
+build and start first. `epg` builds last, on its own, because it downloads the grabber from the network. If that build
 fails, the rest of the stack stays up and you see a warning. Retry it with `docker compose up -d --build epg`.
 
 Pulling published images from GHCR (`ghcr.io/<GITHUB_REPOSITORY_OWNER>/freetv-<svc>:<FREETV_TAG>`) needs
@@ -53,7 +53,8 @@ each variable is in `docs/ARCHITECTURE.md`. The ones you are most likely to chan
 |----------|-------|
 | `DOMAIN` | Empty = HTTP on port 80. Set it for automatic HTTPS. |
 | `PROXY_SECRET` | Required. Regenerate with `infra/scripts/gen-secret.sh --write --force` only if you accept invalidating existing signed URLs. |
-| `COMPOSE_PROFILES` | `proxy,epg` by default. Remove a name to disable that container. |
+| `COMPOSE_PROFILES` | `epg` by default: hub mode, no relay. Add `proxy` to turn the relay on (with `PROXY_ENABLED=true`). Remove a name to disable that container. |
+| `PROXY_ENABLED` | `false` in `.env.example`. Must match the `proxy` profile. The code and compose fall back to `true` when the variable is absent, so keep it in `.env`. |
 | `EPG_SITES` | `all` grabs every guide source and is slow and CPU-heavy. Narrow it, e.g. `EPG_SITES=tvguide.com,bbc.co.uk`. On small hosts, also set `EPG_SPLIT_BY_SITE=true`. |
 | `GITHUB_REPOSITORY_OWNER` | Empty builds locally. Set it to your lowercase GitHub owner only once your CI has pushed images. |
 | `LOG_LEVEL` | `warn` by default for api and proxy. Logs rotate at 20 MB, five files per container. |
@@ -72,9 +73,16 @@ is replaced atomically on each grab, so the site keeps serving the previous guid
 with less memory, use a curated list and `EPG_SPLIT_BY_SITE=true`. Each site then runs on its own, so one slow
 site cannot stall the run or take the whole guide down with it.
 
-### Disabling the relay (proxy)
+### Turning the relay on or off
 
-1. Remove `proxy` from `COMPOSE_PROFILES` in `.env` (e.g. `COMPOSE_PROFILES=epg`).
+The relay is off by default. Read [OPERATIONS: Relay](OPERATIONS.md#relay-off-by-default) first: it sets out what the
+relay costs in bandwidth and how to cap it.
+
+To turn it on, set `COMPOSE_PROFILES=proxy,epg` and `PROXY_ENABLED=true`, then `docker compose up -d --remove-orphans`.
+
+To turn it off (the default state):
+
+1. Remove `proxy` from `COMPOSE_PROFILES` in `.env` (`COMPOSE_PROFILES=epg`).
 2. Set `PROXY_ENABLED=false` so the api stops issuing proxied stream URLs.
 3. `docker compose up -d --remove-orphans`.
 
@@ -93,8 +101,8 @@ infra/scripts/update.sh          # git pull, pull images (or build if missing), 
 FREETV_BUILD=1 infra/scripts/update.sh   # always build from this checkout
 ```
 
-`update.sh` needs a git checkout and refuses to run while `PROXY_SECRET` is still the placeholder. It updates
-`web`, `api` and `proxy` first and `epg` last. If the `epg` pull or build fails, it prints a warning and keeps the
+`update.sh` needs a git checkout and refuses to run while `PROXY_SECRET` is still the placeholder. It updates the
+core services first (`web` and `api`, and `proxy` when its profile is on) and `epg` last. If the `epg` pull or build fails, it prints a warning and keeps the
 running guide container. With an empty `GITHUB_REPOSITORY_OWNER` it builds and never pulls.
 
 **Upgrading from an earlier release.** The api, proxy and epg images now run as uid 1000 (`node`). A data volume
@@ -136,8 +144,9 @@ docker compose restart web         # after editing infra/caddy/Caddyfile, or: do
 
 ## Troubleshooting
 
-**`/proxy` returns 502.** The relay is off or down. Check `COMPOSE_PROFILES` includes `proxy`, then
-`docker compose logs proxy`. If you deliberately disabled it, set `PROXY_ENABLED=false` (see above).
+**`/proxy` returns 502.** The relay is off (the default) or down. With the default, nothing should call `/proxy`; if
+something does, `PROXY_ENABLED` is probably still `true`. If you turned the relay on, check that `COMPOSE_PROFILES`
+includes `proxy`, then `docker compose logs proxy`. To switch it off, see the steps above.
 Caddy returns 502 when the upstream container does not resolve or refuses connections, which is how
 the UI learns that the relay is unavailable.
 
@@ -172,7 +181,7 @@ network) and Grafana with one provisioned dashboard, **FreeTV**.
 
 ```sh
 # .env
-COMPOSE_PROFILES=proxy,epg,monitoring
+COMPOSE_PROFILES=epg,monitoring                   # add proxy if the relay is on
 GRAFANA_ADMIN_PASSWORD=<a long random password>    # openssl rand -hex 24
 ```
 
@@ -224,7 +233,7 @@ sudo infra/auto-update/install.sh --uninstall
 
 ```sh
 # .env
-COMPOSE_PROFILES=proxy,epg,autoupdate
+COMPOSE_PROFILES=epg,autoupdate                   # add proxy if the relay is on
 WATCHTOWER_SCHEDULE=0 0 4 * * *                   # 6-field cron (seconds first), default 04:00 daily
 ```
 

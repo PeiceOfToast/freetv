@@ -7,6 +7,9 @@
 #   __DOMAIN__    public hostname, e.g. tv.example.com. Leave the value empty for plain HTTP on the IP.
 #
 # Runs once on first boot. Progress: /var/log/freetv-bootstrap.log
+#
+# The .env written below comes from .env.example: COMPOSE_PROFILES=epg and PROXY_ENABLED=false (hub mode). Only web,
+# api and epg start. The relay container starts only if you turn it on (docs/OPERATIONS.md, "Relay").
 
 write_files:
   - path: /usr/local/sbin/freetv-bootstrap.sh

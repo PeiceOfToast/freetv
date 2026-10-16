@@ -49,9 +49,16 @@ PUBLIC_URL=https://tv.example.com
 
 Everything else has a sensible default. The two decisions worth making now:
 
-- `COMPOSE_PROFILES=proxy,epg` — keep both for the full experience. Drop `proxy` if you do not want
-  your server relaying video for visitors (fewer channels will play). Drop `epg` if you do not want a
-  TV guide (saves CPU; the grabber is the heaviest thing here).
+- `COMPOSE_PROFILES=epg` is the default in `.env.example`, and it is **hub mode**: the relay container is
+  not started, `PROXY_ENABLED=false`, and your server never carries video. Viewers watch in the browser where a
+  stream allows it, and otherwise use **Open in app** on their own device. `/connect` gives everyone the
+  playlist and guide URLs for TV and phone apps. Drop `epg` if you do not want a TV guide (saves CPU; the
+  grabber is the heaviest thing here).
+- **Turning the relay on** (optional): set `COMPOSE_PROFILES=proxy,epg` and `PROXY_ENABLED=true`, then
+  `docker compose up -d --remove-orphans`. Browser-blocked streams then play in the site through your server.
+  Be clear about the cost first: every relayed byte leaves your server. Oracle's free allowance is 10 TB a month,
+  about 31 Mbit/s averaged over the month, and one 1080p viewer watching around the clock uses roughly 1.5 TB of it.
+  Read [OPERATIONS: Relay](OPERATIONS.md#relay-off-by-default) and set a cap before you turn it on.
 - `EPG_SITES=all` — the default grabs a guide for every channel that has one (about 11,700 channels
   from ~190 sites, several hours per run). It needs the 4 GB the `epg` container may use. On a VM with less
   memory, start with a short list, e.g. `EPG_SITES=tvguide.com,freeview.co.uk`, and add `EPG_SPLIT_BY_SITE=true`
@@ -76,11 +83,13 @@ While `GITHUB_REPOSITORY_OWNER` is empty, nothing is pulled and every image is b
 
 ```sh
 curl -s https://tv.example.com/api/health          # {"ok":true}
-curl -s https://tv.example.com/api/meta | jq       # channel counts, last ingest, proxy enabled
+curl -s https://tv.example.com/api/meta | jq       # channel counts, last ingest, proxy enabled (false in hub mode)
 ```
 
 Open `https://tv.example.com` in a browser, pick a channel, press play. Open `/tv` on a TV browser.
-Add `https://tv.example.com/api/playlist.m3u` to TiviMate/Kodi if you prefer those.
+For TV and phone apps, open `https://tv.example.com/connect`: it lists the playlist and guide URLs for your
+domain, with steps for TiviMate, Kodi, VLC and others. To change the site name, public URL or featured apps,
+open `/admin` (it needs `ADMIN_TOKEN` from `.env`). Those settings are stored in the database and apply at once.
 
 The guide fills in after the first grab finishes: `docker compose logs -f epg`. The api notices the
 new file within a minute and `/api/meta` shows `programmes` > 0.

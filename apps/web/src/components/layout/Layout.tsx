@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useTheme } from "@/lib/theme";
+import { useSettings } from "@/pages/connect/useSettings";
 import { promptInstall, useCanInstall, useIosInstallHint } from "@/lib/pwa";
 import { useKeyHandler } from "@/lib/shortcuts";
 import { UpdateToast } from "./UpdateToast";
@@ -57,6 +58,8 @@ function IosInstallHint() {
 
 export function Layout() {
   const [theme, setTheme] = useTheme();
+  const { settings } = useSettings();
+  const siteName = settings?.siteName || "FreeTV";
   const navigate = useNavigate();
   const [helpOpen, setHelpOpen] = useState(false);
   // Global keys. Page-specific keys (search, player) live with their pages.
@@ -72,13 +75,13 @@ export function Layout() {
         <div className="mx-auto max-w-screen-2xl px-4 h-14 flex items-center gap-1 sm:gap-2">
           {/* The tap area is 44 px (p-2) but the layout box stays 28 px (-m-2). */}
           <NavLink to="/" className="hidden min-[380px]:flex shrink-0 items-center gap-2 p-2 -m-2 mr-2 sm:mr-4 font-semibold tracking-tight">
-            <img src="/favicon.svg" alt="" className="h-7 w-7" /> <span className="hidden sm:inline">FreeTV</span>
+            <img src="/favicon.svg" alt="" className="h-7 w-7" /> <span className="hidden sm:inline">{siteName}</span>
           </NavLink>
           <nav className="flex shrink-0 items-center gap-0.5 sm:gap-1">
             <NavLink to="/" end className={link}>Channels</NavLink>
             <NavLink to="/guide" className={link}>Guide</NavLink>
-            <NavLink to="/connect" className={link}>Use in your app</NavLink>
-            <NavLink to="/about" className={link}>About</NavLink>
+            <NavLink to="/connect" className={link}><span className="sm:hidden">Apps</span><span className="hidden sm:inline">Use in your app</span></NavLink>
+            <NavLink to="/about" className={link + " hidden min-[480px]:inline-flex"}>About</NavLink>
             <NavLink to="/tv" className={link + " hidden sm:inline-flex"} title="10-foot mode for TVs">TV mode</NavLink>
           </nav>
           <div className="ml-auto flex min-w-0 items-center gap-1 sm:gap-2">
@@ -88,7 +91,7 @@ export function Layout() {
               onClick={() => setHelpOpen(true)}
               aria-label="Keyboard shortcuts"
               title="Keyboard shortcuts (?)"
-              className="grid min-h-11 min-w-11 pointer-fine:min-h-0 pointer-fine:min-w-7 place-items-center rounded-md border border-zinc-300 text-sm font-semibold hover:bg-zinc-200/60 dark:border-zinc-700 dark:hover:bg-zinc-800/60"
+              className="hidden sm:grid min-h-11 min-w-11 pointer-fine:min-h-0 pointer-fine:min-w-7 place-items-center rounded-md border border-zinc-300 text-sm font-semibold hover:bg-zinc-200/60 dark:border-zinc-700 dark:hover:bg-zinc-800/60"
             >
               ?
             </button>
@@ -103,7 +106,7 @@ export function Layout() {
         <Outlet />
       </main>
       <footer className="border-t border-zinc-200/80 dark:border-zinc-800/80 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] text-center text-xs opacity-60">
-        Channel data from <a className="underline" href="https://github.com/iptv-org/iptv">iptv-org</a>. FreeTV hosts no streams. MIT licensed.
+        <NavLink to="/about" className="underline">About</NavLink> · Channel data from <a className="underline" href="https://github.com/iptv-org/iptv">iptv-org</a>. FreeTV hosts no streams. MIT licensed.
       </footer>
       <IosInstallHint />
       <UpdateToast />

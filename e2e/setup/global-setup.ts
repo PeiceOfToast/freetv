@@ -90,6 +90,7 @@ export default async function globalSetup(_config: FullConfig) {
         DATA_DIR: dataDir,
         PORT: String(API_PORT),
         PROXY_SECRET,
+        PROXY_ENABLED: "true",
         PROBE_ENABLED: "false",
         IPTV_API_BASE: "http://127.0.0.1:1",
         INGEST_INTERVAL_HOURS: "0",

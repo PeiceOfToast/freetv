@@ -34,6 +34,9 @@ export function ActiveFilters({ state: s, refData, onChange, onClearAll }: Activ
     const name = refData?.languages.find((l) => l.code === code)?.name ?? code;
     chips.push({ key: `l:${code}`, label: name, onRemove: () => onChange({ language: without(s.language, code) }) });
   }
+  if (s.playable !== "any") {
+    chips.push({ key: "playable", label: `Plays in: ${s.playable === "browser" ? "Browser" : "App"}`, onRemove: () => onChange({ playable: "any" }) });
+  }
   if (s.quality) {
     const label = QUALITY_OPTIONS.find((o) => o.value === s.quality)?.label ?? s.quality;
     chips.push({ key: "quality", label: `Quality: ${label}`, onRemove: () => onChange({ quality: "" }) });

@@ -5,7 +5,16 @@ import { getDb, type Db } from "../db/index.js";
 import { planChannels } from "../lib/channel-query.js";
 import { HttpError, boolParam, installHttpBehaviour, intParam, qs } from "../lib/http.js";
 import { parseJsonArray, nowSec, placeholders, prep } from "../lib/sql.js";
-import { healthOf, nextShape, nowShape, proxyUrlFor, relayOnlyOf, type ProgrammeRow } from "../lib/views.js";
+import {
+  browserPlayableOfChannel,
+  browserPlayableOfStream,
+  healthOf,
+  nextShape,
+  nowShape,
+  proxyUrlFor,
+  relayOnlyOf,
+  type ProgrammeRow,
+} from "../lib/views.js";
 
 interface ListRow {
   id: string;
@@ -23,12 +32,15 @@ interface ListRow {
   online_count: number;
   guide_count: number;
   probed: number;
+  browser_count: number;
+  browser_probed: number;
   number: number | null;
 }
 
 const LIST_COLUMNS = `c.id, c.name, c.country, co.name AS country_name, co.flag AS flag, c.categories, c.languages,
   c.network, c.is_nsfw, c.logo_url, c.stream_count, c.best_quality, c.online_count, c.guide_count, c.number,
-  EXISTS(SELECT 1 FROM streams s WHERE s.channel = c.id AND s.status IS NOT NULL) AS probed`;
+  EXISTS(SELECT 1 FROM streams s WHERE s.channel = c.id AND s.status IS NOT NULL) AS probed,
+  c.browser_count, EXISTS(SELECT 1 FROM streams s WHERE s.channel = c.id AND s.browser_ok IS NOT NULL) AS browser_probed`;
 
 /** online: true if a stream passed its last check, false if probed but none online, null if never probed. */
 const onlineOf = (r: ListRow) => (r.online_count > 0 ? true : r.probed ? false : null);
@@ -184,6 +196,7 @@ export async function catalogRoutes(app: FastifyInstance) {
         streamCount: r.stream_count,
         bestQuality: r.best_quality,
         online: onlineOf(r),
+        browserPlayable: browserPlayableOfChannel(r.browser_count, r.browser_probed === 1),
         hasGuide: r.guide_count > 0,
       };
       if (!current) return base;
@@ -244,7 +257,7 @@ export async function catalogRoutes(app: FastifyInstance) {
     const streams = (
       prep(
         db,
-        `SELECT idx, url, title, quality, quality_rank, labels, feed, user_agent, referrer, status, last_checked
+        `SELECT idx, url, title, quality, quality_rank, labels, feed, user_agent, referrer, status, last_checked, browser_ok
          FROM streams WHERE channel = ?
          ORDER BY CASE status WHEN 'online' THEN 0 WHEN 'offline' THEN 2 ELSE 1 END,
                   CASE WHEN lower(trim(url)) LIKE 'https://%' THEN 0 ELSE 1 END,
@@ -261,6 +274,7 @@ export async function catalogRoutes(app: FastifyInstance) {
         referrer: string | null;
         status: string | null;
         last_checked: number | null;
+        browser_ok: number | null;
       }>
     ).map((s) => {
       const proxyUrl = proxyUrlFor(s.url, s.user_agent, s.referrer);
@@ -276,6 +290,7 @@ export async function catalogRoutes(app: FastifyInstance) {
         online: healthOf(s.status),
         lastChecked: s.last_checked,
         relayOnly: relayOnlyOf(s.user_agent, s.referrer),
+        browserPlayable: browserPlayableOfStream(s.browser_ok),
         ...(proxyUrl !== undefined ? { proxyUrl } : {}),
       };
     });

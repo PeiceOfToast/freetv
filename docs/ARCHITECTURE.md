@@ -6,7 +6,7 @@
 |---------|-----------------|-----------------|---------|
 | `web`   | Caddy 2 + static build of `apps/web` | 80/443 (published) | Serves the SPA; reverse-proxies `/api/*` → `api:3000` and `/proxy/*` → `proxy:3001`. Auto-HTTPS when `DOMAIN` is set. |
 | `api`   | Node 22, Fastify, better-sqlite3 | 3000 | Downloads iptv-org datasets on a schedule, builds SQLite catalog (`/data/catalog.db`), serves JSON API, imports XMLTV from `/data/epg/guide.xml`, signs proxy URLs. |
-| `proxy` | Node 22 | 3001 | HLS relay. Only accepts HMAC-signed URLs issued by `api`. Rewrites playlists; streams segments. Compose profile `proxy` (on by default via `COMPOSE_PROFILES=proxy`). |
+| `proxy` | Node 22 | 3001 | HLS relay. Only accepts HMAC-signed URLs issued by `api`. Rewrites playlists; streams segments. Compose profile `proxy` (off by default; hub mode. Enable with `COMPOSE_PROFILES=proxy,epg` and `PROXY_ENABLED=true`). |
 | `epg`   | Node 22 + clone of iptv-org/epg pinned to `EPG_REF` | – | Cron-style loop: builds `channels.xml` from `guides.json`, runs the grabber, writes `/data/epg/guide.xml` atomically (write temp, rename). |
 
 Volumes: `data` (shared by api + epg): `/data/catalog.db`, `/data/raw/*.json`, `/data/epg/guide.xml`,
@@ -28,11 +28,11 @@ All images are multi-arch (amd64 + arm64) because the reference host is an ARM V
 | Var | Default | Used by | Meaning |
 |-----|---------|---------|---------|
 | `DOMAIN` | *(empty)* | web | If set, Caddy serves `https://$DOMAIN` with auto certs; if empty, plain `http://:80`. |
-| `COMPOSE_PROFILES` | `proxy,epg` | compose | Drop `proxy` or `epg` to disable those containers. |
+| `COMPOSE_PROFILES` | `epg` (`.env.example`) | compose | Hub mode: no relay container. Add `proxy` to turn the relay on (also set `PROXY_ENABLED=true`). Drop `epg` to disable the guide. |
 | `IPTV_API_BASE` | `https://iptv-org.github.io/api` | api, epg | Base URL for dataset JSON. Fallback mirror: `https://raw.githubusercontent.com/iptv-org/api/gh-pages`. |
 | `INGEST_INTERVAL_HOURS` | `6` | api | Re-download datasets and rebuild catalog. |
 | `HIDE_NSFW_DEFAULT` | `true` | api | API hides `is_nsfw` and blocklisted channels unless `nsfw=true` is requested. |
-| `PROXY_ENABLED` | `true` | api | Whether api issues proxied stream URLs. |
+| `PROXY_ENABLED` | `false` in `.env.example`; `true` in the code and compose when unset | api | Whether the api issues relay URLs (`proxyUrl`, and `playlist.m3u?proxy=true`). `false` is hub mode. Must match the `proxy` profile. |
 | `PROXY_SECRET` | *(required)* | api, proxy | Shared HMAC key. `openssl rand -hex 32`. |
 | `PROXY_PUBLIC_PATH` | `/proxy` | api, proxy | Public path prefix the browser uses to reach the proxy. |
 | `PROXY_URL_TTL_SECONDS` | `86400` | api | Lifetime of relay URLs in channel responses (24 h). The proxy refuses them after `exp`. Keep it at most 2592000 (30 d); the proxy rejects further ahead. |
@@ -42,7 +42,7 @@ All images are multi-arch (amd64 + arm64) because the reference host is an ARM V
 | `GITHUB_REPOSITORY_OWNER` | *(empty)* | compose | Owner of `ghcr.io/<owner>/freetv-<svc>`. Empty means `local`: images are built on this host and never pulled. |
 | `FREETV_TAG` | `latest` | compose | Tag used when pulling images. |
 | `EPG_REF` | pinned commit sha | epg (build arg) | iptv-org/epg commit the `epg` image is built from. Changing it needs a rebuild. |
-| `PUBLIC_URL` | *(empty)* | api | Public base URL (`https://tv.example.com`) for absolute URLs in M3U exports and Cast; derived from the request when empty. |
+| `PUBLIC_URL` | *(empty)* | api | Public base URL (`https://tv.example.com`) for absolute URLs in M3U exports and Cast; derived from the request when empty. The `publicUrl` setting in `/admin` takes precedence over it (see Operator settings). |
 | `PROBE_ENABLED` | `true` | api | Run the stream health prober. |
 | `PROBE_INTERVAL_HOURS` | `6` | api | Time to cycle through every stream once. |
 | `PROBE_CONCURRENCY` | `8` | api | Parallel probes. |
@@ -83,18 +83,58 @@ All images are multi-arch (amd64 + arm64) because the reference host is an ARM V
 | `PORT` | 3000 / 3001 | api / proxy | Listen port. |
 | `DATA_DIR` | `/data` | api | Data root. |
 
-## Request flow: playing a channel
+## Operator settings (stored in the database)
 
-1. UI opens `/watch/:id` → `GET /api/channels/:id` → channel + ordered `streams[]` + `now`/`next`.
-2. For each stream (in order) the UI tries `stream.url` with hls.js (or native HLS on Safari).
-   A stream that errors (network/CORS/manifest) within ~8 s is skipped.
-3. If all direct attempts fail and `stream.proxyUrl` exists, the UI retries each with `proxyUrl`.
-4. `proxyUrl` is `${PROXY_PUBLIC_PATH}/${sig}/${payload}` where
-   `payload = base64url(JSON.stringify({u, ua?, r?, exp}))`, `exp` is unix seconds (now + `PROXY_URL_TTL_SECONDS`, 24 h), and
-   `sig = base64url(HMAC_SHA256(PROXY_SECRET, payload))`.
-   The proxy verifies the signature and `exp` (playlists must be within `exp`; segments also get a 10-minute grace period), fetches `u` (with optional User-Agent / Referer), and:
+Presentation settings are edited by the operator at `/admin` and kept in the `settings` table, so they change without a
+restart. Viewers have no say in them.
+
+| Setting | Fallback when unset | Used for |
+|---------|---------------------|----------|
+| `siteName` | `FreeTV` | The name the site presents to visitors. |
+| `publicUrl` | `PUBLIC_URL`, then the request origin | Absolute URLs in M3U exports, `/connect` and Cast. |
+| `contact` | empty | Contact details for visitors (for example, where to send takedown requests). |
+| `notes` | empty | Plain-text notes for visitors (up to 2000 characters). |
+| `featuredApps` | `tivimate`, `vlc`, `kodi`, `plex`, `jellyfin` | Which app instructions `/connect` lists first. |
+| `relayEnabled` | (not stored) | Read-only. Mirrors `proxyEnabled`, which comes from `PROXY_ENABLED` and the `proxy` profile. |
+
+`GET /api/settings` is public. `GET` and `PUT /api/admin/settings` need `Authorization: Bearer $ADMIN_TOKEN`, and a PUT
+takes any subset of the stored keys. Precedence is stored value, then the env fallback, then the built-in default.
+Full contract: [API.md](API.md#settings).
+
+## Request flow: playing a channel (hub mode first)
+
+The site tries to play in the browser. Nothing in this flow needs the relay, and the relay is off by default.
+
+1. The watch page opens `/watch/:id` and calls `GET /api/channels/:id`: channel details, `streams[]` in playback order,
+   and `now`/`next`.
+2. Each stream carries what the prober knows. `browserPlayable` says whether a browser can play it without a relay
+   (`null` until it has been probed). `relayOnly` means the stream needs a User-Agent or Referer, which browsers cannot
+   send, so the direct attempt is skipped for it.
+3. The browser tries the direct streams in order, with hls.js (or native HLS on Safari). A stream that errors within
+   about 8 s is skipped.
+4. If nothing plays, the page offers **Open in app** for channels whose streams need an app. The link is
+   `GET /api/channels/:id/playlist.m3u`, a one-channel M3U with the origin's own URLs (no relay), served as a download.
+   The viewer's player (VLC, a TV app) fetches the streams itself, so the server sends only the small playlist.
+5. Relay, only when `PROXY_ENABLED=true` and the `proxy` profile runs: if every direct attempt fails and a stream has a
+   `proxyUrl`, the browser retries those. Hub mode issues no `proxyUrl`, so this step never happens.
+
+The relay URL format, used in step 5:
+`proxyUrl` is `${PROXY_PUBLIC_PATH}/${sig}/${payload}` where
+`payload = base64url(JSON.stringify({u, ua?, r?, exp}))`, `exp` is unix seconds (now + `PROXY_URL_TTL_SECONDS`, 24 h), and
+`sig = base64url(HMAC_SHA256(PROXY_SECRET, payload))`.
+The proxy verifies the signature and `exp` (playlists must be within `exp`; segments also get a 10-minute grace period), fetches `u` (with optional User-Agent / Referer), and:
    - if the response is an M3U8 playlist: rewrites every URI (absolute, relative, `URI="..."` inside `#EXT-X-KEY`/`#EXT-X-MAP`) into a signed proxy URL and returns it;
    - otherwise streams the body through (supports `Range`, passes `Content-Type`, strips upstream CORS headers, adds `Access-Control-Allow-Origin: *`).
+
+## Browser playability (prober)
+
+The stream prober (`apps/api/src/prober`) records, per stream, whether a browser can play it without the relay: an
+`https` URL with permissive CORS, and no User-Agent or Referer requirement. A channel's `browserPlayable` is `true` when
+any of its streams is, `false` when every probed stream needs an app, and `null` when nothing has been probed. The
+browse filter `playable=browser` lists the first group and `playable=app` the rest, unknown channels included.
+
+The flag is a snapshot from the last check, not a live test. Results go to `stream_health` and are mirrored onto
+`streams`, so they survive re-ingests. When a channel says "browser" but will not play, see TROUBLESHOOTING.
 
 ## Catalog build (api/ingest)
 
@@ -122,10 +162,10 @@ All images are multi-arch (amd64 + arm64) because the reference host is an ARM V
 ## Front end
 
 Vite + React 18 + TypeScript + Tailwind v4 + react-router + hls.js. No global state library; URL search params are the source of truth for browse state; favorites in `localStorage`.
-Routes: `/` (browse), `/watch/:id`, `/guide`, `/about`. API client in `src/lib/api.ts` is the only place that knows URLs.
+Routes: `/` (browse), `/watch/:id`, `/guide`, `/about`, `/connect` (playlist and guide URLs for apps), `/admin` (operator settings) and `/tv/*` (the 10-foot UI). API client in `src/lib/api.ts` is the only place that knows URLs.
 
 ## Security notes
 
-- The proxy only relays URLs signed by the api, which only signs URLs that exist in the catalog. No open relay.
+- The proxy only relays URLs signed by the api, which only signs URLs that exist in the catalog. No open relay. The relay is off by default (hub mode, DECISIONS D13).
 - api is read-only to the public except `/api/admin/*` behind `ADMIN_TOKEN`.
 - Caddy sets sane headers; the SPA has no inline scripts.

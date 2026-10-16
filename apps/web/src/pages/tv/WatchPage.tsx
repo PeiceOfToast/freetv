@@ -260,7 +260,10 @@ export default function WatchPage() {
       {!detail && !loadError && <div className="tv-msg">Loading channel…</div>}
       {loadError && <div className="tv-msg">Couldn't load this channel.<br /><span className="tv-small">Press Back to return.</span></div>}
       {detail && pState.failed && !strip && (
-        <div className="tv-msg">Couldn't play {detail.name}.<br /><span className="tv-small">Press Enter to retry, or Back.</span></div>
+        <div className="tv-msg">
+          Doesn't play here — {detail.number !== null ? `use channel ${detail.number} in your TV app` : "find this channel in your TV app"} (see /connect on a phone)
+          <br /><span className="tv-small">Press Enter to retry, or Back.</span>
+        </div>
       )}
 
       {digits && (

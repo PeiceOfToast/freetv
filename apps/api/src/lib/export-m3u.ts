@@ -5,6 +5,8 @@ import { expiryIn } from "./views.js";
 export interface M3uOptions {
   /** Absolute origin without a trailing slash, e.g. https://tv.example.com */
   base: string;
+  /** Written as the `#PLAYLIST:` second line when given (the instance's site name). */
+  siteName?: string;
   /** proxy=true: emit relayed URLs (base + signed path) instead of origin URLs. */
   proxy: boolean;
   /** best = first stream per channel; all = every stream, one #EXTINF each. */
@@ -25,9 +27,13 @@ const clean = (v: string) => v.replace(/[\r\n]+/g, " ");
 /** Attribute values sit in double quotes, so double quotes become single quotes. */
 const attr = (v: string) => clean(v).replace(/"/g, "'");
 
+/** An export channel, optionally with this instance's channel number (emitted as tvg-chno). */
+export type M3uChannel = ExportChannel & { number?: number | null };
+
 /** Renders the full M3U document. Lines are joined per 1,000 channels to keep allocations small. */
-export function renderM3u(channels: ExportChannel[], opts: M3uOptions): string {
+export function renderM3u(channels: M3uChannel[], opts: M3uOptions): string {
   const parts: string[] = [`#EXTM3U x-tvg-url="${attr(`${opts.base}/api/guide.xml`)}"\n`];
+  if (opts.siteName !== undefined) parts.push(`#PLAYLIST:${clean(opts.siteName)}\n`);
   // One expiry for the whole document: the export TTL, not the 24 h UI TTL.
   const exp = expiryIn(config.proxyExportTtlSeconds);
   for (let i = 0; i < channels.length; i += CHUNK) {
@@ -41,8 +47,10 @@ export function renderM3u(channels: ExportChannel[], opts: M3uOptions): string {
   return parts.join("");
 }
 
-function appendChannel(out: string[], ch: ExportChannel, opts: M3uOptions, exp: number): void {
-  const attrs = [`tvg-id="${attr(ch.id)}"`, `tvg-name="${attr(ch.name)}"`];
+function appendChannel(out: string[], ch: M3uChannel, opts: M3uOptions, exp: number): void {
+  const attrs: string[] = [];
+  if (ch.number !== undefined && ch.number !== null) attrs.push(`tvg-chno="${ch.number}"`);
+  attrs.push(`tvg-id="${attr(ch.id)}"`, `tvg-name="${attr(ch.name)}"`);
   if (ch.logo) attrs.push(`tvg-logo="${attr(ch.logo)}"`);
   if (ch.country) attrs.push(`tvg-country="${attr(ch.country)}"`);
   if (ch.languages[0]) attrs.push(`tvg-language="${attr(ch.languages[0])}"`);

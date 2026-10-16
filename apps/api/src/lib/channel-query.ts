@@ -134,6 +134,14 @@ export function planChannels(query: Record<string, unknown>, opts: PlanOptions):
     args.push(minRank);
   }
 
+  // browser = channels with a browser-playable stream; app = channels with streams and none browser-playable (incl. unknown).
+  const playableRaw = qs(query.playable)?.trim().toLowerCase();
+  if (playableRaw === "browser") where.push("c.browser_count > 0");
+  else if (playableRaw === "app") where.push("c.has_stream = 1 AND c.browser_count = 0");
+  else if (playableRaw !== undefined && playableRaw !== "" && playableRaw !== "any") {
+    throw badRequest("playable must be browser, app or any");
+  }
+
   const favorites = listParam(qs(query.favorites));
   if (favorites !== undefined) {
     if (favorites.length > MAX_FAVORITES) throw badRequest(`favorites accepts at most ${MAX_FAVORITES} ids`);

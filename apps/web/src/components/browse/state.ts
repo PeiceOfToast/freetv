@@ -13,6 +13,14 @@ export const QUALITY_OPTIONS: { value: Quality | ""; label: string }[] = [
   { value: "2160p", label: "4K" },
 ];
 
+export type Playable = "browser" | "app" | "any";
+export const PLAYABLE_OPTIONS: { value: Playable; label: string }[] = [
+  { value: "any", label: "Any" },
+  { value: "browser", label: "Browser" },
+  { value: "app", label: "App" },
+];
+const PLAYABLES = new Set<string>(["browser", "app"]);
+
 export const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: "relevance", label: "Relevance" },
   { value: "name", label: "Name" },
@@ -30,6 +38,8 @@ export interface BrowseState {
   country: string[];
   language: string[];
   quality: Quality | "";
+  /** "browser": streams known to play in a browser; "app": streams that need a player app. */
+  playable: Playable;
   hasStream: boolean;
   online: boolean;
   nsfw: boolean;
@@ -42,7 +52,7 @@ export interface BrowseState {
 }
 
 export const EMPTY_STATE: BrowseState = {
-  q: "", category: [], country: [], language: [], quality: "",
+  q: "", category: [], country: [], language: [], quality: "", playable: "any",
   hasStream: true, online: false, nsfw: false, favorites: false,
   sort: null, order: null, page: 1,
 };
@@ -54,6 +64,7 @@ export function parseState(params: URLSearchParams): BrowseState {
   const sortRaw = params.get("sort");
   const orderRaw = params.get("order");
   const qualityRaw = params.get("quality");
+  const playableRaw = params.get("playable");
   const page = Number.parseInt(params.get("page") ?? "1", 10);
   return {
     q: (params.get("q") ?? "").trim(),
@@ -61,6 +72,7 @@ export function parseState(params: URLSearchParams): BrowseState {
     country: csv(params.get("country")).map((c) => c.toUpperCase()),
     language: csv(params.get("language")),
     quality: qualityRaw && QUALITIES.has(qualityRaw) ? (qualityRaw as Quality) : "",
+    playable: playableRaw && PLAYABLES.has(playableRaw) ? (playableRaw as Playable) : "any",
     hasStream: params.has("hasStream") ? flag(params.get("hasStream")) : true,
     online: flag(params.get("online")),
     nsfw: flag(params.get("nsfw")),
@@ -79,6 +91,7 @@ export function buildParams(s: BrowseState): URLSearchParams {
   if (s.country.length) p.set("country", s.country.join(","));
   if (s.language.length) p.set("language", s.language.join(","));
   if (s.quality) p.set("quality", s.quality);
+  if (s.playable !== "any") p.set("playable", s.playable);
   if (!s.hasStream) p.set("hasStream", "0");
   if (s.online) p.set("online", "1");
   if (s.nsfw) p.set("nsfw", "1");
@@ -105,7 +118,7 @@ export function effectiveOrder(s: BrowseState): "asc" | "desc" {
 
 export function hasActiveFilters(s: BrowseState): boolean {
   return Boolean(
-    s.q || s.category.length || s.country.length || s.language.length || s.quality ||
+    s.q || s.category.length || s.country.length || s.language.length || s.quality || s.playable !== "any" ||
     !s.hasStream || s.online || s.nsfw || s.favorites,
   );
 }
@@ -119,6 +132,7 @@ export function toChannelQuery(s: BrowseState, favoriteIds: string[]): ChannelQu
     country: s.country.length ? s.country : undefined,
     language: s.language.length ? s.language : undefined,
     quality: s.quality || undefined,
+    playable: s.playable === "any" ? undefined : s.playable,
     hasStream: s.hasStream,
     online: s.online,
     nsfw: s.nsfw,
@@ -135,7 +149,7 @@ export function toChannelQuery(s: BrowseState, favoriteIds: string[]): ChannelQu
 export function activeFilterCount(s: BrowseState): number {
   return (
     s.category.length + s.country.length + s.language.length +
-    (s.quality ? 1 : 0) + (s.hasStream ? 0 : 1) + (s.online ? 1 : 0) +
+    (s.quality ? 1 : 0) + (s.playable !== "any" ? 1 : 0) + (s.hasStream ? 0 : 1) + (s.online ? 1 : 0) +
     (s.nsfw ? 1 : 0) + (s.favorites ? 1 : 0)
   );
 }

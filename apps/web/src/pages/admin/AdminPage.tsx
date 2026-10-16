@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { adminApi, AdminApiError, clearToken, loadToken, saveToken, type AdminStatus } from "@/lib/admin-api";
 import { ActionButton, Big, Panel, Row, StackedBar } from "./Panels";
 import TokenGate from "./TokenGate";
+import SettingsPanel from "./SettingsPanel";
 import { ago, fmtBytes, fmtSeconds, fmtUptime, num } from "./format";
 
 const REFRESH_MS = 15_000;
@@ -207,6 +208,12 @@ export default function AdminPage() {
           </Panel>
         </div>
       )}
+
+      <SettingsPanel
+        token={token}
+        onAuthError={() => signOut("That token was rejected. Check ADMIN_TOKEN and try again.")}
+        onToast={(text) => setToast({ id: Date.now(), text })}
+      />
 
       <nav aria-label="Useful links" className="flex flex-wrap gap-2 text-sm">
         {[

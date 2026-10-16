@@ -67,6 +67,8 @@ export interface Candidate {
   /** 0 never probed, 1 offline with few failures, 2 everything else. */
   priority: number;
   lastChecked: number;
+  /** Some stream row with this URL has a User-Agent or Referer: browsers cannot send those, so never browser-playable. */
+  relayOnly: boolean;
 }
 
 interface SelectRow {
@@ -99,6 +101,7 @@ export function selectTargets(db: Db, opts: ProbeOpts, now: number): Candidate[]
     .all(...params) as SelectRow[];
 
   // Several stream rows may share a URL; the first one (lowest id) supplies UA and Referer.
+  const relayUrls = new Set(rows.filter((r) => r.user_agent || r.referrer).map((r) => r.url));
   const seen = new Set<string>();
   const out: Candidate[] = [];
   for (const r of rows) {
@@ -108,7 +111,14 @@ export function selectTargets(db: Db, opts: ProbeOpts, now: number): Candidate[]
     const last = r.last_checked ?? 0;
     if (fails >= DEAD_FAIL_COUNT && last > now - DEAD_BACKOFF_S) continue;
     const priority = r.status === null ? 0 : r.status === "offline" && fails < RETRY_FIRST_FAILS ? 1 : 2;
-    out.push({ url: r.url, userAgent: r.user_agent, referrer: r.referrer, priority, lastChecked: last });
+    out.push({
+      url: r.url,
+      userAgent: r.user_agent,
+      referrer: r.referrer,
+      priority,
+      lastChecked: last,
+      relayOnly: relayUrls.has(r.url),
+    });
   }
   out.sort((a, b) => a.priority - b.priority || a.lastChecked - b.lastChecked);
   return out;
@@ -149,26 +159,45 @@ export function publishedStatus(h: { status: string; fail_count: number }): "onl
   return h.fail_count >= 2 ? "offline" : null;
 }
 
-export function applyResults(db: Db, batch: Array<{ url: string; result: ProbeResult }>, now: number): void {
+/** Browser flag for a result: relay-only streams are always 0; otherwise null (keep the stored value) when the probe failed. */
+function browserValue(relayOnly: boolean, browserOk: boolean | null): number | null {
+  if (relayOnly) return 0;
+  return browserOk === null ? null : browserOk ? 1 : 0;
+}
+
+export interface ApplyItem {
+  url: string;
+  result: ProbeResult;
+  relayOnly?: boolean;
+}
+
+export function applyResults(db: Db, batch: ApplyItem[], now: number): void {
   const readPrev = db.prepare("SELECT status, fail_count, ok_count, last_online FROM stream_health WHERE url = ?");
+  // A null browser value (failed probe) keeps the stored one: COALESCE picks the old value.
   const upsert = db.prepare(`
-    INSERT INTO stream_health (url, status, http_status, latency_ms, fail_count, ok_count, last_checked, last_online, error)
-    VALUES (@url, @status, @http, @latency, @fail, @ok, @now, @lastOnline, @error)
+    INSERT INTO stream_health (url, status, http_status, latency_ms, fail_count, ok_count, last_checked, last_online, error, browser_ok)
+    VALUES (@url, @status, @http, @latency, @fail, @ok, @now, @lastOnline, @error, @browser)
     ON CONFLICT(url) DO UPDATE SET status = excluded.status, http_status = excluded.http_status,
       latency_ms = excluded.latency_ms, fail_count = excluded.fail_count, ok_count = excluded.ok_count,
-      last_checked = excluded.last_checked, last_online = excluded.last_online, error = excluded.error`);
-  const mirror = db.prepare("UPDATE streams SET status = @published, last_checked = @now WHERE url = @url");
+      last_checked = excluded.last_checked, last_online = excluded.last_online, error = excluded.error,
+      browser_ok = COALESCE(excluded.browser_ok, stream_health.browser_ok)`);
+  const mirror = db.prepare(
+    `UPDATE streams SET status = @published, last_checked = @now,
+       browser_ok = (SELECT h.browser_ok FROM stream_health h WHERE h.url = streams.url)
+     WHERE url = @url`,
+  );
   const channelsOf = db.prepare("SELECT DISTINCT channel FROM streams WHERE url = ?");
-  // Same denormalisation as ingest (build.ts): channels.last_checked backs sort=updated.
+  // Same denormalisation as ingest (build.ts): channels.last_checked backs sort=updated, browser_count backs playable.
   const recount = db.prepare(
     `UPDATE channels SET online_count = (SELECT COUNT(*) FROM streams s WHERE s.channel = channels.id AND s.status = 'online'),
-       last_checked = (SELECT MAX(s.last_checked) FROM streams s WHERE s.channel = channels.id)
+       last_checked = (SELECT MAX(s.last_checked) FROM streams s WHERE s.channel = channels.id),
+       browser_count = (SELECT COUNT(*) FROM streams s WHERE s.channel = channels.id AND s.browser_ok = 1)
      WHERE id = ?`,
   );
 
   db.transaction(() => {
     const affected = new Set<string>();
-    for (const { url, result } of batch) {
+    for (const { url, result, relayOnly = false } of batch) {
       const prev = readPrev.get(url) as PrevHealth | undefined;
       const next = nextHealth(prev, result, now);
       upsert.run({
@@ -181,11 +210,34 @@ export function applyResults(db: Db, batch: Array<{ url: string; result: ProbeRe
         now,
         lastOnline: next.last_online,
         error: result.error,
+        browser: browserValue(relayOnly, result.browserOk),
       });
       mirror.run({ url, published: publishedStatus(next), now });
       for (const row of channelsOf.all(url) as Array<{ channel: string }>) affected.add(row.channel);
     }
     for (const id of affected) recount.run(id);
+  }).immediate();
+}
+
+/**
+ * Enforces the relay rule across the whole catalog: a URL with a User-Agent or Referer on any stream row
+ * is browser_ok = 0 in stream_health (which ingest copies back to streams) and in streams, and the
+ * affected channels' browser_count is recomputed. Covers rows that were never probed, e.g. after an ingest.
+ */
+export function enforceRelayOnly(db: Db): void {
+  const relayUrls = "SELECT url FROM streams WHERE user_agent IS NOT NULL OR referrer IS NOT NULL";
+  const stale = "(browser_ok IS NULL OR browser_ok != 0)";
+  db.transaction(() => {
+    const channels = db
+      .prepare(`SELECT DISTINCT channel FROM streams WHERE url IN (${relayUrls}) AND ${stale}`)
+      .all() as Array<{ channel: string }>;
+    if (channels.length === 0) return;
+    db.prepare(`UPDATE stream_health SET browser_ok = 0 WHERE url IN (${relayUrls}) AND (browser_ok IS NULL OR browser_ok != 0)`).run();
+    db.prepare(`UPDATE streams SET browser_ok = 0 WHERE url IN (${relayUrls}) AND ${stale}`).run();
+    const recount = db.prepare(
+      "UPDATE channels SET browser_count = (SELECT COUNT(*) FROM streams s WHERE s.channel = channels.id AND s.browser_ok = 1) WHERE id = ?",
+    );
+    for (const { channel } of channels) recount.run(channel);
   }).immediate();
 }
 
@@ -222,7 +274,7 @@ async function execute(log: ProbeLog | undefined, opts: ProbeOpts): Promise<Prob
   const counts: ProbeCounts = { checked: 0, online: 0, offline: 0 };
   const bucket = new TokenBucket(rate);
   let cursor = 0;
-  let pending: Array<{ url: string; result: ProbeResult }> = [];
+  let pending: ApplyItem[] = [];
   const flush = () => {
     if (pending.length === 0) return;
     applyResults(db, pending, Math.floor(Date.now() / 1000));
@@ -237,13 +289,14 @@ async function execute(log: ProbeLog | undefined, opts: ProbeOpts): Promise<Prob
       counts.checked++;
       if (row.status === "online") counts.online++;
       else counts.offline++;
-      pending.push({ url: target.url, result: row });
+      pending.push({ url: target.url, result: row, relayOnly: target.relayOnly });
       if (pending.length >= BATCH_SIZE) flush();
     }
   };
   const workers = Math.max(1, Math.min(config.probeConcurrency, targets.length));
   await Promise.all(Array.from({ length: workers }, worker));
   flush();
+  enforceRelayOnly(db);
 
   const finished = Date.now();
   const elapsedMs = finished - started;

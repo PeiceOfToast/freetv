@@ -56,7 +56,7 @@ api:
     IPTV_API_BASE: https://iptv-org.github.io/api        # IPTV_API_BASE
     INGEST_INTERVAL_HOURS: "6"                           # INGEST_INTERVAL_HOURS
     HIDE_NSFW_DEFAULT: "true"                            # HIDE_NSFW_DEFAULT
-    PROXY_ENABLED: "true"                                # PROXY_ENABLED (set false with proxy.enabled=false)
+    PROXY_ENABLED: "false"                               # hub mode; set "true" together with proxy.enabled=true
     PROXY_PUBLIC_PATH: /proxy                            # PROXY_PUBLIC_PATH
     EPG_FILE: /data/epg/guide.xml                        # EPG_FILE
     DATA_DIR: /data
@@ -72,7 +72,7 @@ api:
 
 proxy:
   # Remove the proxy profile: set false, and set api.env.PROXY_ENABLED to "false".
-  enabled: true
+  enabled: false
   replicas: 1
   resources:
     requests: { cpu: 100m, memory: 64Mi }

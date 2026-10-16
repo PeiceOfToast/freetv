@@ -23,6 +23,8 @@ export interface PlayerProps {
    * remount the player; if it returns false, the player just retries its current plan.
    */
   onExhausted?: (reason: "auto" | "retry") => boolean | void | Promise<boolean | void>;
+  /** Extra content for the failure panel (for example an "Open in app" action). Shown only when playback fails. */
+  failureHint?: ReactNode;
 }
 
 interface Attempt {
@@ -142,7 +144,7 @@ function IconButton({ label, onClick, children }: { label: string; onClick: () =
   );
 }
 
-export function Player({ streams, autoplay = true, className = "", title, subtitle, artwork, onExhausted }: PlayerProps) {
+export function Player({ streams, autoplay = true, className = "", title, subtitle, artwork, onExhausted, failureHint }: PlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -557,11 +559,15 @@ export function Player({ streams, autoplay = true, className = "", title, subtit
         )}
 
         {exhausted && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-zinc-900/95 p-6 text-center text-zinc-100">
+          // Scrolls when the content is taller than the box (phones). m-auto centres it without clipping the top.
+          <div className="absolute inset-0 flex overflow-y-auto bg-zinc-900/95 text-center text-zinc-100">
+          <div className="m-auto flex w-full flex-col items-center gap-3 p-4 sm:p-6">
             <p className="text-lg font-semibold">Couldn't play this channel</p>
-            <p className="max-w-md text-sm text-zinc-400">
+            {/* With a hint (the "open in app" action), the long explanation is hidden on phones so the action fits the box. */}
+            <p className={`max-w-md text-sm text-zinc-400 ${failureHint ? "hidden sm:block" : ""}`}>
               The streams may be offline or blocked from this network. Try again, or pick a source below.
             </p>
+            {failureHint && <div className="max-w-md text-sm">{failureHint}</div>}
             <button
               type="button"
               onClick={retry}
@@ -576,6 +582,7 @@ export function Player({ streams, autoplay = true, className = "", title, subtit
                 ))}
               </ul>
             )}
+          </div>
           </div>
         )}
       </div>

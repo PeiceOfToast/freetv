@@ -30,6 +30,8 @@ export const OVERRIDES: Record<string, string[]> = {
   "CNN.us": [hls("cors-blocked")],
   // Plays directly on the first attempt.
   "AlJazeera.qa": [hls("live")],
+  // Every stream is dead, so the watch page ends in the "Couldn't play this channel" panel (hub.spec.ts).
+  "Akaku53.us": [hls("dead")],
 };
 
 export function writeCatalogInput(dst: string) {

@@ -8,7 +8,8 @@
 # GITHUB_REPOSITORY_OWNER empty or "local" means nothing is published: the images are always built
 # from this checkout and nothing is pulled.
 #
-# The core services (web, api, proxy) are pulled or built and restarted first. epg comes last: if its
+# The core services of the active profiles (web and api, plus proxy when its profile is on) are pulled or built and
+# restarted first. epg comes last: if its
 # pull or build fails, that is a warning and the running epg container is left as it is.
 #
 # Requires a git checkout (not a downloaded zip) and a .env with a real PROXY_SECRET (and a real

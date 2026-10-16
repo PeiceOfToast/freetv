@@ -45,6 +45,17 @@ export const nowShape = (p: ProgrammeRow) => ({
 
 export const nextShape = (p: ProgrammeRow) => ({ title: p.title, start: p.start_ts, stop: p.stop_ts });
 
+/**
+ * Channel-level browser playability: true when at least one stream plays in a browser, false when some
+ * stream was probed and none did, null when no stream has been probed for it yet.
+ */
+export const browserPlayableOfChannel = (browserCount: number, anyProbed: boolean): boolean | null =>
+  browserCount > 0 ? true : anyProbed ? false : null;
+
+/** Stream-level browser playability from streams.browser_ok (1 | 0 | NULL). */
+export const browserPlayableOfStream = (browserOk: number | null | undefined): boolean | null =>
+  browserOk === null || browserOk === undefined ? null : browserOk === 1;
+
 /** Browsers cannot send a custom User-Agent/Referer, so such streams only work through the relay. */
 export function relayOnlyOf(userAgent: string | null, referrer: string | null): boolean {
   return Boolean(userAgent || referrer);

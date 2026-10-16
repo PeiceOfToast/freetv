@@ -1,12 +1,14 @@
 import fs from "node:fs";
 import zlib from "node:zlib";
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance } from "fastify";
 import { config } from "../config.js";
 import { getDb, getMeta } from "../db/index.js";
 import { HttpError, badRequest, boolParam, qs } from "../lib/http.js";
 import { loadExportChannels } from "../lib/export-query.js";
 import { renderM3u } from "../lib/export-m3u.js";
 import { acceptsGzip, guideEtag, gzipIsCurrent, isNotModified } from "../lib/export-guide.js";
+import { getSettings, publicBase, settingsGeneration } from "../lib/settings.js";
+import { prep } from "../lib/sql.js";
 import { proxyUrlFor } from "../lib/views.js";
 import { guideGzPath } from "../epg/importer.js";
 
@@ -67,11 +69,6 @@ function playlistMemoDelete(key: string) {
   playlistMemo.delete(key);
 }
 
-const firstValue = (v: string | string[] | undefined): string | undefined => {
-  const first = (Array.isArray(v) ? v[0] : v)?.split(",")[0]?.trim();
-  return first ? first : undefined;
-};
-
 /** Stats of the prebuilt gzip copy when it exists and is at least as new as the source; otherwise null. */
 async function currentGzip(file: string, src: fs.Stats): Promise<fs.Stats | null> {
   try {
@@ -82,13 +79,17 @@ async function currentGzip(file: string, src: fs.Stats): Promise<fs.Stats | null
   }
 }
 
-/** PUBLIC_URL when set, else the request's (forwarded) scheme and host. */
-function absoluteBase(req: FastifyRequest): string {
-  const pinned = config.publicUrl.replace(/\/+$/, "");
-  if (pinned) return pinned;
-  const proto = firstValue(req.headers["x-forwarded-proto"]) ?? req.protocol;
-  const host = firstValue(req.headers["x-forwarded-host"]) ?? firstValue(req.headers.host) ?? "localhost";
-  return `${proto}://${host}`;
+/** A filename safe in a quoted Content-Disposition value: ASCII letters, digits, space, dot, dash, underscore. */
+export function safeFilename(name: string, fallback: string): string {
+  const cleaned = name
+    .replace(/[^A-Za-z0-9 ._-]+/g, "_")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^\.+/, "")
+    .slice(0, 80)
+    .trim();
+  // A name with no ASCII letters or digits (e.g. all CJK) falls back to the channel id.
+  return /[A-Za-z0-9]/.test(cleaned) ? cleaned : fallback.replace(/[^A-Za-z0-9._-]+/g, "_");
 }
 
 // TRACK J: /api/playlist.m3u and /api/guide.xml per docs/API.md "Exports"
@@ -106,14 +107,17 @@ export async function exportRoutes(app: FastifyInstance) {
     const streamsRaw = (qs(query.streams) ?? "").trim().toLowerCase() || "best";
     if (streamsRaw !== "best" && streamsRaw !== "all") throw badRequest("streams must be best or all");
 
-    const base = absoluteBase(req);
-    const ingest = getMeta("last_ingest");
+    const settings = getSettings();
+    const base = publicBase(req);
+    // The memo also depends on the settings (site name, public URL): a write bumps the generation.
+    const ingest = `${getMeta("last_ingest")}|${settingsGeneration()}`;
     const key = playlistKey(base, query);
     let body = memoGet(key, ingest, Date.now());
     if (body === null) {
       const result = loadExportChannels(getDb(), query, { hideNsfwDefault: config.hideNsfwDefault });
       body = renderM3u(result.channels, {
         base,
+        siteName: settings.siteName,
         proxy,
         streams: streamsRaw,
         proxyPathFor: (s, exp) => proxyUrlFor(s.url, s.userAgent, s.referrer, exp),
@@ -124,6 +128,37 @@ export async function exportRoutes(app: FastifyInstance) {
 
     reply.header("content-type", "audio/x-mpegurl; charset=utf-8");
     reply.header("content-disposition", 'attachment; filename="freetv.m3u"');
+    reply.header("cache-control", "public, max-age=300");
+    return reply.send(body);
+  });
+
+  // One channel, every stream, origin URLs (never relayed): what "Open in app" hands to a player.
+  app.get("/api/channels/:id/playlist.m3u", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const db = getDb();
+    const ch = prep(db, "SELECT name, number, blocked FROM channels WHERE id = ?").get(id) as
+      | { name: string; number: number | null; blocked: number }
+      | undefined;
+    if (!ch || ch.blocked) throw new HttpError(404, "channel not found");
+
+    // Same loader as the full export. favorites=<id> narrows it to this channel; nsfw=true because the
+    // channel detail endpoint shows NSFW channels too, and the blocked check above already ran.
+    const result = loadExportChannels(db, { favorites: id, nsfw: "true" }, { hideNsfwDefault: config.hideNsfwDefault });
+    const settings = getSettings();
+    const body = renderM3u(
+      result.channels.map((c) => ({ ...c, number: ch.number })),
+      {
+        base: publicBase(req),
+        siteName: settings.siteName,
+        proxy: false,
+        streams: "all",
+        proxyPathFor: () => undefined,
+        truncated: false,
+      },
+    );
+
+    reply.header("content-type", "audio/x-mpegurl; charset=utf-8");
+    reply.header("content-disposition", `attachment; filename="${safeFilename(ch.name, id)}.m3u"`);
     reply.header("cache-control", "public, max-age=300");
     return reply.send(body);
   });

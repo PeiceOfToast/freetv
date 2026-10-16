@@ -7,7 +7,8 @@ least setup to most:
 2. **The TV's own browser**, at `/tv`, the 10-foot interface.
 3. **A packaged app**: an Android TV / Google TV / Fire TV APK, a Samsung Tizen app, or an LG webOS app.
 4. **A playlist source for a TV app you already use.** TiviMate, Kodi, Jellyfin and others read
-   FreeTV's M3U playlist and XMLTV guide. This is the most reliable route on most TVs today.
+   FreeTV's M3U playlist and XMLTV guide. This is the most reliable route on most TVs today. Open `/connect` on your
+   site for both URLs, with steps for each app.
 
 The examples use `https://tv.example.com`. Replace it with your `DOMAIN`.
 
@@ -25,9 +26,10 @@ Requirements, for both:
 - **HTTPS.** Browsers only expose Cast and AirPlay on secure pages. Set `DOMAIN` so Caddy issues a
   certificate. A plain-HTTP install on a LAN address will not show the buttons. (Verify on your
   browser version.)
-- **The relay is on.** Keep the `proxy` profile enabled and `PROXY_ENABLED=true`. The relay matters for
-  casting because the TV cannot use the browser's workarounds: when a stream needs a specific
-  User-Agent or Referer, the relayed URL carries those headers for it. Verify this on your streams.
+- **Streams the TV can fetch itself, or the relay.** The TV fetches the stream directly, which works for streams that
+  play in a browser without special headers. The relay is off by default. A stream that needs a User-Agent or Referer
+  the TV cannot send, or one that is blocked for browsers, needs the relay: enable the `proxy` profile and set
+  `PROXY_ENABLED=true` (see [OPERATIONS: Relay](OPERATIONS.md#relay-off-by-default)). Verify on your streams.
 - **`PUBLIC_URL` is set** to your public address, for example `PUBLIC_URL=https://tv.example.com`.
   Absolute stream and playlist URLs are built from it, and the TV must be able to reach them.
 - **The TV has internet access.** It does not need to be on the same network as the server.
@@ -229,7 +231,8 @@ current requirements.
 ## 6. Using FreeTV as a source for a TV app
 
 This route works on most TVs, gives you a proper remote UI, EPG grids and recording where the app
-supports it, and needs no packaging. FreeTV exports two URLs:
+supports it, and needs no packaging. FreeTV exports two URLs. `/connect` on your site shows them with steps for each
+app, and QR codes a phone can scan:
 
 | What | URL |
 |------|-----|
@@ -249,7 +252,7 @@ automatically. You can still paste the guide URL separately.
 | Only favorites | `…/api/playlist.m3u?favorites=BBCNews.uk,CNN.us` |
 | Minimum quality | `…/api/playlist.m3u?quality=720p` |
 | Every stream per channel | `…/api/playlist.m3u?streams=all` (default is `streams=best`) |
-| Relayed URLs | `…/api/playlist.m3u?proxy=true` |
+| Relayed URLs (relay on only) | `…/api/playlist.m3u?proxy=true` |
 
 Country codes are ISO 3166 alpha-2 (`US`, `GB`). Channel ids look like `BBCNews.uk`. Comma lists are OR.
 The playlist returns every match, up to 20,000 channels, and only channels with at least one stream.
@@ -273,8 +276,8 @@ send. The relay adds them. Every relayed byte also crosses your server, so mind 
 
 - **Favorites live in the browser.** The server cannot see them, so pass them explicitly with
   `favorites=`. Changing the list changes the URL, so update the playlist address in your TV app.
-- **`online=true` only filters when health data exists.** The stream health prober is not part of v1, so
-  do not rely on it yet.
+- **`online=true` uses the prober's last check.** Before the first probe pass there is no data, and the filter is
+  ignored, so a new instance can list channels that are offline until the prober has run.
 - **Not every channel has a guide.** Channels without guide data show empty schedules.
 - **Geography.** Geo-restricted streams are fetched from the TV's network.
 

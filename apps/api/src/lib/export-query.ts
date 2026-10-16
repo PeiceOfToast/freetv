@@ -20,6 +20,8 @@ export interface ExportChannel {
   name: string;
   country: string | null;
   logo: string | null;
+  /** This instance's channel number (emitted as tvg-chno). */
+  number?: number | null;
   /** Category display names, in the channel's own order. */
   categories: string[];
   /** Language display names, in the channel's own order. */
@@ -39,6 +41,7 @@ interface ChannelRow {
   name: string;
   country: string | null;
   logo_url: string | null;
+  number: number | null;
   categories: string;
   languages: string;
 }
@@ -72,7 +75,7 @@ export function loadExportChannels(
 
   const rows = prep(
     db,
-    `SELECT c.id, c.name, c.country, c.logo_url, c.categories, c.languages
+    `SELECT c.id, c.name, c.country, c.logo_url, c.number, c.categories, c.languages
      FROM ${plan.from} ${plan.where} ORDER BY ${plan.orderBy} LIMIT ?`,
   ).all(...plan.args, cap + 1) as ChannelRow[];
   const truncated = rows.length > cap;
@@ -93,6 +96,7 @@ export function loadExportChannels(
       name: r.name,
       country: r.country,
       logo: r.logo_url,
+      number: r.number,
       categories: parseJsonArray(r.categories).map((id) => categoryNames.get(id) ?? id),
       languages: parseJsonArray(r.languages).map((code) => languageNames.get(code) ?? code),
       streams: [],

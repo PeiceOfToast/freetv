@@ -144,7 +144,7 @@ describe("catalog routes", () => {
       const item = body.items.find((i: { id: string }) => i.id === "BBCNews.uk");
       assert.ok(item, "BBCNews.uk found");
       assert.deepEqual(Object.keys(item).sort(), [
-        "bestQuality", "categories", "country", "countryName", "flag", "hasGuide", "id", "isNsfw", "languages",
+        "bestQuality", "browserPlayable", "categories", "country", "countryName", "flag", "hasGuide", "id", "isNsfw", "languages",
         "logo", "name", "network", "number", "online", "streamCount",
       ]);
       assert.equal(item.country, "UK");

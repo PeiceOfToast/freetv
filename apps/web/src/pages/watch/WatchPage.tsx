@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, ApiError, type ChannelDetail, type Programme, type StreamInfo } from "@/lib/api";
+import { api, ApiError, type ChannelDetail, type Programme, type Settings, type StreamInfo } from "@/lib/api";
 import { favorites, useIsFavorite } from "@/lib/favorites";
 import { fmtTime, nowTs, progress } from "@/lib/format";
 import { Player } from "@/components/player/Player";
@@ -9,6 +9,8 @@ import { useSaveData } from "@/lib/network";
 import { CastButton } from "@/components/cast/CastButton";
 import { CastBar } from "@/components/cast/CastBar";
 import { AirPlayButton } from "@/components/cast/AirPlayButton";
+import { OpenInAppMenu } from "@/components/openinapp/OpenInAppMenu";
+import { PlayabilityBadge } from "@/components/openinapp/PlayabilityBadge";
 import { Schedule } from "./Schedule";
 
 type LoadState =
@@ -31,6 +33,10 @@ export default function WatchPage() {
   // Relay URLs expire (24 h); when playback is exhausted or the user retries, re-fetch the channel if
   // the current copy is older than 10 minutes and remount the player with fresh URLs.
   const [gen, setGen] = useState(0);
+  // The player ran out of sources (after any refresh). Makes "Open in app" the primary action.
+  const [exhausted, setExhausted] = useState(false);
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const playerRef = useRef<HTMLDivElement>(null);
   const loadedAtRef = useRef(0);
   const refreshStreams = async (): Promise<boolean> => {
     if (Date.now() - loadedAtRef.current < 10 * 60_000) return false;
@@ -44,6 +50,22 @@ export default function WatchPage() {
       return false;
     }
   };
+
+  const onPlayerExhausted = async (): Promise<boolean> => {
+    const refreshed = await refreshStreams();
+    if (!refreshed) setExhausted(true);
+    return refreshed;
+  };
+
+  // A new channel, or fresh streams, starts with a fresh player and no exhaustion.
+  useEffect(() => { setExhausted(false); }, [id, gen]);
+
+  // Site settings (relay on or off) tune the copy in the playback panels.
+  useEffect(() => {
+    const ac = new AbortController();
+    api.settings(ac.signal).then(setSettings).catch(() => undefined);
+    return () => ac.abort();
+  }, []);
 
   // Channel detail.
   useEffect(() => {
@@ -132,6 +154,31 @@ export default function WatchPage() {
     epg?.find((p) => p.start >= (nowItem?.stop ?? now) && p !== scheduleCurrent) ??
     (ch.next && ch.next.start >= now ? ch.next : null);
 
+  // Every stream is known not to play in a browser (the prober recorded it).
+  const allUnplayable = ch.streams.length > 0 && ch.streams.every((x) => x.browserPlayable === false);
+  const anyPlayable = ch.streams.some((x) => x.browserPlayable === true);
+  const primaryCta = allUnplayable || exhausted;
+  const relayOff = settings?.relayEnabled === false;
+  const connectHref = ch.number !== null ? `/connect?channel=${ch.number}` : "/connect";
+  const hereText = exhausted
+    ? "Couldn't play in this browser just now."
+    : allUnplayable
+      ? `This channel probably won't play in this browser.${relayOff ? " This site does not relay streams." : ""} Try Open in app.`
+      : anyPlayable
+        ? "Plays in this browser."
+        : "Tries this browser first. Some streams may need an app.";
+
+  const goToPlayer = () => playerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+
+  const failureHint = (
+    <div className="space-y-3">
+      <p>
+        {allUnplayable ? "This channel doesn't play in a browser. " : ""}Open it in VLC or your TV app instead.
+      </p>
+      <OpenInAppMenu channelId={ch.id} streams={ch.streams} emphasis="primary" compact moreTargetId="watch-open-in-app" />
+    </div>
+  );
+
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(window.location.href);
@@ -151,10 +198,50 @@ export default function WatchPage() {
       </nav>
 
       <div className="watch-split grid gap-6 lg:grid-cols-3">
-        <div className="min-w-0 lg:col-span-2">
-          {/* Remounted when the reduced-data preference changes, so the new stream order starts from the top. */}
-          <Player key={`${ch.id}:${gen}:${saveData ? "reduced" : "full"}`} streams={ch.streams} onExhausted={refreshStreams} />
+        <div className="min-w-0 space-y-4 lg:col-span-2">
+          <div ref={playerRef}>
+            {/* Remounted when the reduced-data preference changes, so the new stream order starts from the top. */}
+            <Player
+              key={`${ch.id}:${gen}:${saveData ? "reduced" : "full"}`}
+              streams={ch.streams}
+              onExhausted={onPlayerExhausted}
+              failureHint={failureHint}
+            />
+          </div>
           <CastBar />
+
+          <section aria-label="Ways to watch" className="grid gap-2.5 sm:grid-cols-3">
+            <div className="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
+              <h2 className="text-sm font-semibold">Watch here</h2>
+              <p className="mt-0.5 text-xs opacity-70">{hereText}</p>
+              <button type="button" onClick={goToPlayer} className="mt-2 min-h-9 text-sm font-medium underline underline-offset-2">
+                Go to the player
+              </button>
+            </div>
+
+            <div
+              id="watch-open-in-app"
+              className={`scroll-mt-20 rounded-xl border p-3 ${
+                primaryCta ? "border-zinc-900 dark:border-zinc-100" : "border-zinc-200 dark:border-zinc-800"
+              }`}
+            >
+              <h2 className="text-sm font-semibold">Open in app</h2>
+              <p className="mt-0.5 text-xs opacity-70">Play in VLC or your TV app. Your device fetches the stream directly.</p>
+              <div className="mt-2">
+                <OpenInAppMenu channelId={ch.id} streams={ch.streams} emphasis={primaryCta ? "primary" : "secondary"} />
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
+              <h2 className="text-sm font-semibold">Get every channel in your app</h2>
+              <p className="mt-0.5 text-xs opacity-70">
+                {ch.number !== null ? `Add the playlist once, then watch channel ${ch.number} and the rest.` : "Add the playlist once, then watch every channel."}
+              </p>
+              <Link to={connectHref} className="mt-2 inline-flex min-h-9 items-center text-sm font-medium underline underline-offset-2">
+                Set up your app
+              </Link>
+            </div>
+          </section>
         </div>
 
         <aside className="min-w-0 space-y-4">
@@ -291,6 +378,7 @@ function StreamList({ streams }: { streams: StreamInfo[] }) {
           {s.labels.map((l) => (
             <Badge key={l}>{l}</Badge>
           ))}
+          <PlayabilityBadge playable={s.browserPlayable} />
           {s.relayOnly && <Badge>Relay only</Badge>}
           {s.proxyUrl && !s.relayOnly && <Badge>Relay available</Badge>}
           <OnlineBadge online={s.online} />

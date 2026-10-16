@@ -4,6 +4,12 @@ All notable changes to FreeTV. Format follows Keep a Changelog; versions follow 
 
 ## [Unreleased]
 
+### Changed — hub mode
+- **The relay is off by default.** The site is a hub: streams play directly in the browser when the stream allows it; otherwise the viewer's own device fetches them. `.env.example`, compose and the api default to `PROXY_ENABLED=false` / `COMPOSE_PROFILES=epg`; turn the relay on explicitly if you want it.
+- Three ways to watch on every channel page: **Watch here**, **Open in app** (hands the stream to VLC / the system player via `vlc-x-callback`, Android intents, or a one-channel `.m3u` download — `GET /api/channels/:id/playlist.m3u`), and **Use in your app** (`/connect`: playlist + guide URLs with QR codes, live-customisable by country/category/quality/favorites, step-by-step for TiviMate, VLC, Kodi, Plex, Jellyfin, IPTV Smarters).
+- Operator settings in `/admin` (site name, public URL, contact, notes, featured apps), stored in the DB (`GET /api/settings`, `GET/PUT /api/admin/settings`); M3U exports carry `#PLAYLIST:<siteName>` and `tvg-chno`.
+- The prober records browser-playability (https + `Access-Control-Allow-Origin: *`); channels and streams expose `browserPlayable`, browse has "Plays in: Browser / App" badges and filter, and the player leads with "Open in app" for channels that can't play on the web.
+
 ### Fixed (independent review, see docs/REVIEW-2026-10-16.md)
 - Takedowns: local blocklist changes and `POST /api/admin/ingest` now force a rebuild (`runIngest({force})`, blocklist fingerprint in the change check).
 - Relay URLs expire: payload carries `exp` (24 h UI / 7 d M3U, `PROXY_URL_TTL_SECONDS` / `PROXY_EXPORT_TTL_SECONDS`); proxy rejects missing/expired/far-future; playlists inherit the parent's expiry; 10-min segment grace; the player re-fetches fresh URLs on exhaustion/retry. URLs issued before this version stop working (players re-fetch).

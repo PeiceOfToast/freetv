@@ -1,7 +1,9 @@
 # Deploying FreeTV on Oracle Cloud (Always Free)
 
 The reference deployment is one `VM.Standard.A1.Flex` instance (4 OCPU, 12 GB, Ubuntu 24.04 Arm — the entire Always-Free Arm allowance as one VM).
-It fits the whole stack with headroom, at no cost on the Always Free tier.
+It fits the whole stack with headroom, at no cost on the Always Free tier. The default configuration is hub mode:
+`web`, `api` and `epg` run, and the relay does not. Turn the relay on only after reading the bandwidth section of
+[OPERATIONS](OPERATIONS.md#relay-off-by-default).
 
 Everything is in [`infra/deploy/oracle/`](../infra/deploy/oracle/):
 
@@ -17,5 +19,5 @@ Oracle's Ubuntu images ship a restrictive iptables ruleset that blocks 80 and 44
 security list allows them. The bootstrap handles that. Opening the VCN security list is still
 your job, as described in the walkthrough.
 
-For anything beyond first setup (updates, backups, narrowing the guide, disabling the relay,
+For anything beyond first setup (updates, backups, narrowing the guide, turning the relay on or off,
 troubleshooting), the generic guide applies unchanged: [DEPLOY.md](DEPLOY.md).

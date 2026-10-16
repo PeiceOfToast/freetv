@@ -9,7 +9,7 @@ you are curious. For step-by-step fixes see [TROUBLESHOOTING.md](TROUBLESHOOTING
 |-----------|-------------------------|---------------|
 | `web` (Caddy) | Serves the UI, terminates TLS, renews certificates, reverse-proxies `/api` and `/proxy`. | `caddy_data` volume (certificates, ACME account). |
 | `api` | Every `INGEST_INTERVAL_HOURS` (6): downloads the iptv-org datasets, rebuilds the SQLite catalog in one transaction. Every `EPG_POLL_SECONDS` (60): checks whether the guide file changed and re-imports it. Serves the JSON API and signs relay URLs. | `data` volume: `/data/catalog.db` (+ WAL), `/data/raw/*.json`, `/data/raw/etags.json`. |
-| `proxy` | Relays HLS playlists/segments for signed URLs only. Stateless. | none |
+| `proxy` (optional, off by default) | Relays HLS playlists/segments for signed URLs only. Runs only when the `proxy` profile is enabled and `PROXY_ENABLED=true`. Stateless. | none |
 | `epg` | On start and every `EPG_INTERVAL_HOURS` (12): regenerates `channels.xml`, runs iptv-org/epg's grabber, atomically replaces `/data/epg/guide.xml`. | `data` volume: `/data/epg/guide.xml`. |
 
 All containers restart automatically (`restart: unless-stopped`) and have health checks.
@@ -69,8 +69,8 @@ M3U playlists already downloaded. Players see 403 and must re-open the channel (
 new URLs. Without rotation, a relay URL stops working at its own `exp` (24 h for channel pages, 7 d for M3U
 exports), so a URL copied out of the site is only good for that long. Use rotation after a leak or an abuse report.
 
-**Turn the relay off/on.** Edit `COMPOSE_PROFILES` (remove or add `proxy`) and `PROXY_ENABLED`,
-then `docker compose up -d --remove-orphans`.
+**Turn the relay on or off.** Change `COMPOSE_PROFILES` (add or remove `proxy`) and `PROXY_ENABLED` together, then
+`docker compose up -d --remove-orphans`. Read [Relay](#relay-off-by-default) first: it is off by default for a reason.
 
 ### Stream health prober
 
@@ -129,7 +129,7 @@ Requests are only counted after their signature is checked, so random traffic ca
 **What to watch:** *Rate-limited requests*, *Relay in-flight requests* and *Relay bytes* in Grafana.
 A few `429`s per hour is normal. A steady rate usually means a whole office or mobile carrier sits behind one IP,
 which calls for a higher `PROXY_RATE_LIMIT_RPS` and `PROXY_MAX_CONCURRENT_PER_IP`. Raising the limits also raises
-the egress cost, which is the real expense of the relay (see Capacity above).
+the egress cost, which is the real expense of the relay (see [Relay](#relay-off-by-default)).
 
 ### Blocking a channel
 
@@ -137,6 +137,78 @@ the egress cost, which is the real expense of the relay (see Capacity above).
 It appends the id to the api's `LOCAL_BLOCKLIST` file in the data volume (a JSON array) and, if `ADMIN_TOKEN` is set
 in `.env`, asks the api to re-ingest so the change applies at once. Without the token the change applies at the
 next scheduled ingest. Running it again for the same id changes nothing. Ids are letters, digits and `._@:+-` only.
+
+## Relay (off by default)
+
+FreeTV runs in **hub mode** by default. The server never carries video. A viewer's browser plays a stream from its
+original host when it can, and otherwise **Open in app** hands the stream to a player on the viewer's device, which
+fetches it directly. The `proxy` container is not running.
+
+The relay is an opt-in second path. With it on, the server fetches a browser-blocked stream and passes the bytes to the
+viewer's browser. The channel then plays on the site, and the server's upload bandwidth becomes the cost of the site.
+
+### Turning it on and off
+
+| | Hub mode (default) | Relay on |
+|---|---|---|
+| `COMPOSE_PROFILES` | `epg` | `proxy,epg` |
+| `PROXY_ENABLED` | `false` | `true` |
+| Channel pages | no `proxyUrl`; browser-blocked streams offer **Open in app** | a `proxyUrl` for every stream |
+| `proxy` container | not started | started; answers `/proxy/*` |
+
+Set both values in `.env`, then run `docker compose up -d --remove-orphans`. They must agree. `PROXY_ENABLED=true`
+without the profile gives 502s on relay URLs. The profile without `PROXY_ENABLED=true` starts a relay nothing uses.
+
+`.env.example` sets `PROXY_ENABLED=false`. If the variable is missing from `.env`, the api falls back to `true`
+(the code default in `apps/api/src/config.ts`, and `${PROXY_ENABLED:-true}` in `docker-compose.yml`). Keep the
+line in `.env`.
+
+Turning the relay off stops new relay URLs. URLs already handed out, including those inside downloaded playlists, keep
+working until their `exp`: 24 hours for channel pages and 7 days for M3U exports. Rotating `PROXY_SECRET` ends all of
+them at once (see Routine tasks).
+
+### What it costs
+
+Oracle's Always Free allowance is 10 TB of outbound data a month. Averaged over a 30-day month that is
+
+    10 TB / (30 x 86 400 s)  =  about 3.9 MB/s  =  about 31 Mbit/s
+
+sustained around the clock. That is the whole budget for everything the server sends. In hub mode the total is small
+(pages, the catalog, the guide and logos). With the relay on, nearly all of it is video. Opening a channel in an app
+costs the server only the one-channel playlist, because the viewer's device fetches the stream itself.
+
+| Stream | Typical bitrate | Per viewer-hour | 10 TB a month covers |
+|---|---|---|---|
+| 720p | about 2 Mbit/s | about 0.9 GB | about 11,000 viewer-hours (about 370 a day) |
+| 1080p | about 4 to 5 Mbit/s | about 2 GB | about 5,000 viewer-hours (about 170 a day) |
+
+One 1080p viewer watching around the clock uses about 1.3 to 1.5 TB in a month, which is 13 to 15 % of the allowance.
+At 31 Mbit/s averaged, the budget sustains about seven 1080p viewers or fifteen 720p viewers continuously. Busier
+hours are fine as long as the monthly total stays under 10 TB.
+
+Past 10 TB, Oracle bills outbound data per GB at the rate on its current price list. This document does not record that
+rate, so check it before you rely on the relay. The bitrates are typical, not guaranteed. Measure your own streams.
+
+### How to cap it
+
+The relay has no monthly byte budget. The limits below bound concurrency and request rate, and through those, the bytes.
+
+| Knob | Default | What it bounds |
+|---|---|---|
+| `PROXY_MAX_CONCURRENT` | `200` | Upstream requests in flight for the whole relay. A watching viewer keeps roughly one request in flight, so a low value is a rough cap on simultaneous viewers. |
+| `PROXY_MAX_CONCURRENT_PER_IP` | `16` | The same, per client IP. |
+| `PROXY_RATE_LIMIT_RPS` / `PROXY_RATE_LIMIT_BURST` | `20` / `60` | Requests per second per client IP. |
+| `PROXY_MAX_BYTES` | `52428800` | The size of one upstream response. It does not limit the total, and segments are a few MB, so it does nothing for the monthly figure. |
+
+For a free-tier host, `PROXY_MAX_CONCURRENT=10` is a reasonable starting point (roughly ten simultaneous viewers). That
+number is a judgement, not a measurement, so adjust it against the meter:
+
+1. **Watch the meter.** In the first month, check the instance's outbound data in Oracle's console (the instance's
+   metrics; the metric's name varies, so look for outbound or network bytes). Set a budget alert on the account. With the
+   `monitoring` profile, the Grafana *Relay bytes* panel (`freetv_proxy_bytes_total`) shows the relay's own count.
+2. **Turn it off** when the meter nears the allowance: set `PROXY_ENABLED=false`, remove `proxy` from `COMPOSE_PROFILES`,
+   and run `docker compose up -d --remove-orphans`. This is the only hard cap, and it is manual.
+3. Keep `PROXY_TRUST_PROXY=true`. With it off, every viewer shares one per-IP budget.
 
 ## Backups
 
@@ -170,9 +242,9 @@ Measured on the catalog as of October 2026 (31.5k channels, 16k streams):
 | Idle footprint | api ~120 MB RAM, proxy ~40 MB, web ~20 MB, epg ~150 MB between runs |
 
 An Oracle Always-Free A1.Flex (4 OCPU / 12 GB) is comfortable: api ~150 MB, proxy ~40 MB, web ~20 MB, epg up to its 4 GB limit during a grab. A 1 vCPU / 1 GB VPS runs the site fine with
-`epg` disabled or narrowed to a handful of sites. Bandwidth is the real cost: the relay re-serves
-video, so watch your provider's egress allowance if the site gets popular (Oracle's free tier includes
-10 TB/month).
+`epg` disabled or narrowed to a handful of sites. Bandwidth is the real cost only when the relay is on. Then the server re-serves video, and Oracle's free tier (10 TB a
+month) is the budget; see [Relay](#relay-off-by-default). In hub mode the server sends pages, the catalog, the guide
+and logos, which is small.
 
 ## Security posture
 

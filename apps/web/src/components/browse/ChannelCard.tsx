@@ -4,6 +4,7 @@ import type { ChannelSummary } from "@/lib/api";
 import { favorites } from "@/lib/favorites";
 import { fmtTime, progress } from "@/lib/format";
 import { ChannelLogo } from "./ChannelLogo";
+import { PlayabilityBadge } from "@/components/openinapp/PlayabilityBadge";
 
 export interface ChannelCardProps {
   channel: ChannelSummary;
@@ -82,6 +83,7 @@ function Meta({ channel }: { channel: ChannelSummary }) {
       <span aria-hidden="true">·</span>
       <span className="whitespace-nowrap">{streams}</span>
       {c.bestQuality && <Badge>{c.bestQuality}</Badge>}
+      <PlayabilityBadge playable={c.browserPlayable} />
       {c.isNsfw && <Badge tone="warn">18+</Badge>}
       <OnlineDot online={c.online} />
     </div>

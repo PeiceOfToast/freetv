@@ -17,6 +17,18 @@ browser bars and browses like an app. Nothing to download from an app store.
    choose Install app or Add to Home screen.
 2. Confirm. FreeTV opens in its own window and appears in your app drawer.
 
+## Watching: in the browser or in an app
+
+Most channels play on the site, in the browser. When a stream cannot play in a browser, the watch page shows
+**Open in app** instead.
+
+- **Open in app** hands the stream to a player app on your phone, such as VLC. The app fetches the stream itself.
+  - On Android, the link opens your player. It works reliably in Chrome; see [TROUBLESHOOTING](TROUBLESHOOTING.md) if nothing happens.
+  - On iPhone, Safari hands the link only to a player app that is installed and registers with iOS. FreeTV installs no
+    player, so install one first (for example VLC).
+- **Lists for your apps.** `/connect` on your site gives the playlist and guide URLs for TV and phone apps, with steps
+  for each.
+
 ## What works offline
 
 The app itself and the channel lists and guide data you have already loaded can be browsed without a
@@ -44,8 +56,11 @@ Live TV streams continuously and uses data the whole time. Typical bitrates:
 Individual streams vary. On a metered connection, use Wi-Fi for long viewing, or pick a lower quality in
 the player if it offers one.
 
+In an app the bitrates are the same, but the app fetches the stream itself, so the server's bandwidth is not used.
+
 ## Casting
 
 Chrome on Android shows a Cast button on the watch page. Safari on iPhone and Mac offers AirPlay from the
 video controls. Both need the site served over HTTPS, and the stream is played by the TV rather than your
-phone. Requirements and limits are in [TV.md](TV.md).
+phone. With the relay off (the default), only streams the TV can fetch directly can be cast. Requirements and limits
+are in [TV.md](TV.md).

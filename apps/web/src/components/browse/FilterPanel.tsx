@@ -3,7 +3,7 @@ import { Chip } from "@/components/ui/Chip";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import type { Category, Country, Language } from "@/lib/api";
-import { QUALITY_OPTIONS, type BrowseState } from "./state";
+import { PLAYABLE_OPTIONS, QUALITY_OPTIONS, type BrowseState } from "./state";
 import type { RefData } from "./useRefData";
 
 export interface FilterPanelProps {
@@ -174,6 +174,19 @@ export function FilterPanel({ idPrefix: idp, state: s, refData, refError, onRetr
             </Chip>
           ))}
         </div>
+      </Section>
+
+      <Section id={`${idp}-playable`} title="Plays in">
+        <div className="flex flex-wrap gap-1.5" role="group" aria-labelledby={`${idp}-playable`}>
+          {PLAYABLE_OPTIONS.map((o) => (
+            <Chip key={o.value} active={s.playable === o.value} onClick={() => onChange({ playable: o.value })}>
+              {o.label}
+            </Chip>
+          ))}
+        </div>
+        <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+          Browser: plays in this browser. App: needs VLC or a TV app.
+        </p>
       </Section>
 
       <Section id={`${idp}-countries`} title="Countries">

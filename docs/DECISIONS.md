@@ -21,6 +21,8 @@ directly, then through our relay. The relay only accepts URLs signed by `api` wi
 refuses private address ranges, so it is not an open proxy. Always-proxy was rejected (bandwidth,
 hides nothing useful); direct-only was rejected (too many dead channels for visitors).
 
+*Status:* the mechanism stands. The default changed: the relay is off unless the operator enables it (D13).
+
 ## D4. EPG: one guide site per channel by default
 iptv-org maps some channels to dozens of guide sites (BBC News: 68). Grabbing all of them multiplies
 requests ~3× and yields overlapping schedules. The generator picks one site per channel, preferring a
@@ -43,6 +45,10 @@ bind-mounted) so `git pull` can change routing without an image rebuild; CI fail
 Favorites, theme, TV settings live in the browser. It keeps the site privacy-neutral and the
 operator free of user data. The cost: favorites do not sync across devices, and the guide/M3U export
 take the favorite ids explicitly. Optional accounts are on the roadmap, behind a flag.
+
+*Note (hub mode, D13):* the operator's presentation settings (site name, public URL, contact, notes, featured apps) are
+now stored in the database and edited at `/admin`, not only in env vars. Viewers still have no accounts and no
+server-side state: favorites, view mode and TV settings stay in their own browser.
 
 ## D8. Separate players for the site and for `/tv`
 `Player.tsx` (site) carries touch/mobile behaviour, PiP, Media Session, controls; `TvPlayer.tsx` is
@@ -70,3 +76,32 @@ Operators can flip the default with `HIDE_NSFW_DEFAULT`.
 and each service/page was built by an independent agent that owned a directory. This produced the
 first working version in one afternoon; the integrator pass then fixed cross-track issues (bundle
 splitting, touch targets, EPG overlap). `PARALLEL-WORK.md` keeps the ownership map for future rounds.
+
+## D13. Hub mode by default: the site does not carry video unless the operator opts in
+**Decision.** `.env.example` ships `COMPOSE_PROFILES=epg` and `PROXY_ENABLED=false`. The relay container does not run,
+and the server never carries video. A channel plays in the viewer's browser when a stream allows it. Otherwise the
+watch page offers **Open in app**, which hands the stream to a player on the viewer's device (a one-channel M3U from
+`/api/channels/:id/playlist.m3u`). `/connect` gives everyone the site-wide playlist and guide URLs, with per-app steps.
+The relay stays in the code as an opt-in profile (D3), with its limits and its cost written down in OPERATIONS.
+
+**Why.**
+- *Egress.* The free allowance is 10 TB a month, about 31 Mbit/s averaged. A relayed 1080p viewer costs about 2 GB an
+  hour, so with the relay on the bill grows with the audience, and a popular site would reach the allowance quickly.
+  In hub mode the server sends pages, the catalog, the guide and logos. Viewers' devices fetch the video directly.
+- *Legal posture.* LEGAL.md separates listing and linking from carrying bytes. Carrying bytes depends on jurisdiction,
+  on the host's acceptable-use policy and on geo-licensing. With the relay off by default, a stock deployment carries no
+  stream, and the viewer's own device is the one that fetches it (so geo-restrictions apply to the viewer).
+- *Apps do it better.* VLC, TiviMate, Kodi and the TV apps handle headers, buffering and retries, the TV guide, channel
+  numbers and remote controls. Our browser player is good for the streams a browser can play, and a fallback elsewhere.
+
+**Trade-offs.**
+- Fewer channels play on the site itself. Streams that need CORS, headers or plain http on https pages do not, and the
+  prober's `browserPlayable` flag shows how many of a channel's streams are affected.
+- A viewer who wants a channel that does not play in the browser takes an extra step (an app, or the playlist from
+  `/connect`). Casting from the browser is limited to streams the TV can fetch itself (TV.md).
+- An operator who wants the relay must read the cost section of OPERATIONS and turn it on deliberately.
+
+**Rejected.** *Relay on by default, with a cap:* a concurrency cap does not give a predictable monthly bill, and
+viewers would not know they were being carried. *Removing the relay:* it costs nothing while off, and some operators on
+larger hosts with their own bandwidth want it.
+
