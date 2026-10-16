@@ -6,7 +6,7 @@ import { config } from "../config.js";
 
 export type Db = Database.Database;
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 let db: Db | null = null;
 
 function schemaPath() {

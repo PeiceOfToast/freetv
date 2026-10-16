@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS channels (
   online_count   INTEGER NOT NULL DEFAULT 0, -- streams whose last probe was online
   guide_count    INTEGER NOT NULL DEFAULT 0,
   number         INTEGER,                    -- stable per-instance channel number (from channel_numbers)
+  last_checked   INTEGER,                    -- most recent probe of any of its streams (denormalised for sort=updated)
   name_sort      TEXT NOT NULL               -- lowercase, diacritics stripped
 );
 CREATE INDEX IF NOT EXISTS idx_channels_number ON channels(number);
