@@ -22,6 +22,8 @@ export function openDb(dbPath = config.dbPath): Db {
   db.pragma("journal_mode = WAL");
   db.pragma("synchronous = NORMAL");
   db.pragma("foreign_keys = OFF");
+  // Writers from the worker threads (ingest, EPG) hold the write lock for a few seconds; wait for them.
+  db.pragma("busy_timeout = 5000");
   const schema = fs.readFileSync(schemaPath(), "utf8");
   // Tiny migration scheme: bump SCHEMA_VERSION when a catalog table definition changes. The catalog
   // tables are rebuilt by the next ingest anyway, so on a mismatch we drop them BEFORE applying the
@@ -37,6 +39,19 @@ export function openDb(dbPath = config.dbPath): Db {
     db.prepare("INSERT INTO meta(key,value) VALUES('schema_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(String(SCHEMA_VERSION));
   }
   return db;
+}
+
+/**
+ * A second connection to the same catalog file, for a worker thread. Schema work is skipped: the main
+ * thread has already migrated the file. WAL is a property of the file, so readers on the main
+ * connection keep serving while this connection writes.
+ */
+export function openWorkerConnection(dbPath: string): Db {
+  const conn = new Database(dbPath, { fileMustExist: true });
+  conn.pragma("busy_timeout = 5000");
+  conn.pragma("synchronous = NORMAL");
+  conn.pragma("foreign_keys = OFF");
+  return conn;
 }
 
 export function getDb(): Db {

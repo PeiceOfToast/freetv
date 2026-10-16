@@ -3,17 +3,33 @@ import path from "node:path";
 import type { FastifyBaseLogger } from "fastify";
 import { config } from "../config.js";
 import { getDb, getMeta, setMeta, type Db } from "../db/index.js";
-import { buildCatalog, type BuildStats } from "./build.js";
+import type { BuildStats } from "./build.js";
 import { fetchDatasets } from "./fetch.js";
+import { runWorker, type WorkerLog } from "../lib/worker.js";
+import { resetMetaCache } from "../routes/catalog.js";
+import type { IngestJob } from "./worker.js";
 
 type Log = Pick<FastifyBaseLogger, "info" | "warn" | "error">;
 
 export { buildCatalog as buildCatalogFromDir } from "./build.js";
+export type { IngestJob } from "./worker.js";
 export type { BuildStats } from "./build.js";
 
 export interface RunOptions {
   /** Rebuild the catalog even when no dataset and no local blocklist change is detected. */
   force?: boolean;
+}
+
+/** Compiled dist/ingest/worker.js, or src/ingest/worker.ts under tsx. */
+const WORKER_ENTRY = new URL("./worker.js", import.meta.url);
+
+/**
+ * Rebuilds the catalog tables in a worker thread, on its own connection to the same file. The write
+ * transaction commits atomically, so readers on the main thread see the old catalog until then.
+ * Rejects if the worker fails; the caller decides what to log.
+ */
+export function buildCatalogInWorker(job: IngestJob, log?: WorkerLog): Promise<BuildStats> {
+  return runWorker<BuildStats>(WORKER_ENTRY, job, log);
 }
 
 /** meta key holding the local blocklist fingerprint the current catalog was built from. */
@@ -50,10 +66,14 @@ async function ingestOnce(log: Log | undefined, opts: RunOptions): Promise<void>
     return;
   }
   const reason = opts.force ? "forced" : !hasChannels ? "catalog empty" : datasetsChanged ? "datasets changed" : "local blocklist changed";
-  const stats: BuildStats = buildCatalog(db, config.rawDir);
+  const stats: BuildStats = await buildCatalogInWorker(
+    { dbPath: db.name, rawDir: config.rawDir },
+    log,
+  );
   setMeta(BLOCKLIST_FP_KEY, blocklistFp);
+  resetMetaCache();
   log?.info(
-    `ingest: catalog rebuilt (${reason}) in ${Date.now() - started} ms: ${stats.channels} channels ` +
+    `ingest: catalog rebuilt (${reason}) in ${Date.now() - started} ms (write lock ${stats.writeMs} ms): ${stats.channels} channels ` +
       `(${stats.channelsWithStreams} with streams, ${stats.blockedChannels} blocked), ${stats.streams} streams ` +
       `(${stats.streamsSkipped} orphan skipped), ${stats.guides} guides`,
   );

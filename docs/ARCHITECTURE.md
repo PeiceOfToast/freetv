@@ -99,7 +99,7 @@ All images are multi-arch (amd64 + arm64) because the reference host is an ARM V
 ## Catalog build (api/ingest)
 
 1. Download the nine datasets to `/data/raw/` (ETag/If-Modified-Since where available; skip rebuild if nothing changed).
-2. Inside ONE transaction on `/data/catalog.db`: delete all rows from the catalog tables (everything except `meta` and `programmes`), re-insert from the raw JSON, rebuild `channels_fts`. Readers (WAL mode) keep seeing the old catalog until commit. `programmes` (EPG) is never touched by ingest.
+2. Inside ONE transaction on `/data/catalog.db`: delete all rows from the catalog tables (everything except `meta` and `programmes`), re-insert from the raw JSON, rebuild `channels_fts`. Readers (WAL mode) keep seeing the old catalog until commit. `programmes` (EPG) is never touched by ingest. The build runs in a `worker_threads` Worker (`api/src/ingest/worker.ts`, spawned by `lib/worker.ts`) on its own connection to the same file, so the event loop keeps serving requests during the 2–7 s rebuild; the main thread resets the `/api/meta` cache after the commit. The write lock is held for the transaction only (about 1.3 s on the 31k-channel catalog). Worker failures reject the run and are logged, and never stop the server.
 3. Derivations:
    - `channels.logo_url` ← first `logos` row for channel with `in_use` true (prefer `feed IS NULL`, then main feed).
    - `channels.languages` ← union of feed languages; `channels.broadcast_area` ← union of feed broadcast areas.
@@ -116,7 +116,7 @@ All images are multi-arch (amd64 + arm64) because the reference host is an ARM V
   `<channel site="SITE" lang="LANG" xmltv_id="CHANNEL_ID" site_id="SITE_ID">NAME</channel>`.
   By default one entry per channel (`EPG_ONE_SITE_PER_CHANNEL=true`); otherwise one per `(channel, site)`. Within a site, prefer the channel's main feed, else `feed: null`, else the first. The api importer keeps one programme per `(channel, start)` either way.
 - Runs `npm run grab -- --channels=/work/channels.xml --days=$EPG_DAYS --maxConnections=$EPG_MAX_CONNECTIONS --output=/data/epg/guide.xml.tmp` then `mv` to `guide.xml`.
-- `api/epg/importer.ts` polls mtime; on change, streams the XML with a SAX parser into a temp table, then swaps into `programmes` inside one transaction. `programme@channel` may be `ID` or `ID@FEED`; the part before `@` is the channel id.
+- `api/epg/importer.ts` polls mtime; on change, a worker (`api/src/epg/worker.ts`) streams the XML with a SAX parser into a temp table, then swaps into `programmes` inside one transaction, drops the temp table and checkpoints the WAL, all on its own connection, so the event loop is not blocked (300k rows: worst stall 25 ms, down from about 1 s). The main thread then resets the `/api/meta` cache and writes `guide.xml.gz`. `programme@channel` may be `ID` or `ID@FEED`; the part before `@` is the channel id.
 - Times are stored as unix seconds UTC (`start_ts`, `stop_ts`). The UI renders in the viewer's local zone.
 
 ## Front end

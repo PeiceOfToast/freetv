@@ -12,6 +12,7 @@ All notable changes to FreeTV. Format follows Keep a Changelog; versions follow 
 - Caddy no longer double-sets Cache-Control on `/logo/*`.
 - Player skips plain-http direct attempts on https, 5 s direct timeout, 8-attempt cap; first-visit "catalog downloading" state; auto-reload on stale chunk after a redeploy; TV home rails load lazily.
 - Admin token compared constant-time everywhere; graceful SIGTERM; `lastIngestMs` reported.
+- Catalog rebuild and EPG import run in worker threads: request latency during a rebuild dropped from ~2.2 s to ~20 ms.
 - Logo cache: concurrency semaphore, 4 MP input limit, 503 + Retry-After when busy; prober and logo fetcher share the SSRF guard (`FETCH_ALLOW_PRIVATE` to disable); playlist export memoised 60 s; `guide.xml.gz` written at import and served pre-compressed; EPG staging table dropped after swap; `/api/meta` and `/metrics` cached 15 s; `sort=updated` uses a denormalised column.
 
 ### Added

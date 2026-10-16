@@ -109,6 +109,8 @@ export interface BuildStats {
   countries: number;
   languages: number;
   durationMs: number;
+  /** Time the write lock was held (the transaction only; derivation and JSON reads happen before it). */
+  writeMs: number;
 }
 
 /** Reads all nine dataset files from rawDir. Throws if one is missing or not a JSON array. */
@@ -507,7 +509,9 @@ export function buildCatalog(db: Db, rawDir: string, now = Math.floor(Date.now()
       JSON.stringify({ channels: plan.channels.length, streams: plan.streams.length, channelsWithStreams }),
     );
   });
+  const tWrite = Date.now();
   write.immediate();
+  const writeMs = Date.now() - tWrite;
 
   return {
     channels: plan.channels.length,
@@ -521,5 +525,6 @@ export function buildCatalog(db: Db, rawDir: string, now = Math.floor(Date.now()
     countries: raw.countries.length,
     languages: raw.languages.length,
     durationMs: Date.now() - t0,
+    writeMs,
   };
 }
